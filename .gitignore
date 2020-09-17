@@ -147,3 +147,5 @@ test/*,ff8
 test/*.dSYM
 buildbot
 test/buildbot
+
+/VisualC/.vs/
