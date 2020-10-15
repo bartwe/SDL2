@@ -28,6 +28,7 @@ import android.hardware.*;
 import android.content.pm.ActivityInfo;
 import android.content.pm.PackageManager;
 import android.content.pm.ApplicationInfo;
+import android.net.Uri;
 
 /**
     SDL Activity
@@ -1030,14 +1031,12 @@ public class SDLActivity extends Activity implements View.OnSystemUiVisibilityCh
         return false;
     }
 
-    /**
-     * This method is called by SDL using JNI.
-     */
-    public static boolean isTablet() {
+    public static double getDiagonal() 
+    {
         DisplayMetrics metrics = new DisplayMetrics();
         Activity activity = (Activity)getContext();
         if (activity == null) {
-            return false;
+            return 0.0;
         }
         activity.getWindowManager().getDefaultDisplay().getMetrics(metrics);
 
@@ -1046,8 +1045,15 @@ public class SDLActivity extends Activity implements View.OnSystemUiVisibilityCh
 
         double dDiagonal = Math.sqrt((dWidthInches * dWidthInches) + (dHeightInches * dHeightInches));
 
+        return dDiagonal;
+    }
+
+    /**
+     * This method is called by SDL using JNI.
+     */
+    public static boolean isTablet() {
         // If our diagonal size is seven inches or greater, we consider ourselves a tablet.
-        return (dDiagonal >= 7.0);
+        return (getDiagonal() >= 7.0);
     }
 
     /**
@@ -1588,6 +1594,30 @@ public class SDLActivity extends Activity implements View.OnSystemUiVisibilityCh
             nativePermissionResult(requestCode, false);
         }
     }
+
+    /**
+     * This method is called by SDL using JNI.
+     */
+    public static int openURL(String url)
+    {
+        try {
+            Intent i = new Intent(Intent.ACTION_VIEW);
+            i.setData(Uri.parse(url));
+
+            int flags = Intent.FLAG_ACTIVITY_NO_HISTORY | Intent.FLAG_ACTIVITY_MULTIPLE_TASK;
+            if (Build.VERSION.SDK_INT >= 21) {
+                flags |= Intent.FLAG_ACTIVITY_NEW_DOCUMENT;
+            } else {
+                flags |= Intent.FLAG_ACTIVITY_CLEAR_WHEN_TASK_RESET;
+            }
+            i.addFlags(flags);
+
+            mSingleton.startActivity(i);
+        } catch (Exception ex) {
+            return -1;
+        }
+        return 0;
+    }
 }
 
 /**
@@ -1893,13 +1923,23 @@ class SDLSurface extends SurfaceView implements SurfaceHolder.Callback,
     @Override
     public boolean onTouch(View v, MotionEvent event) {
         /* Ref: http://developer.android.com/training/gestures/multi.html */
-        final int touchDevId = event.getDeviceId();
+        int touchDevId = event.getDeviceId();
         final int pointerCount = event.getPointerCount();
         int action = event.getActionMasked();
         int pointerFingerId;
         int mouseButton;
         int i = -1;
         float x,y,p;
+
+        /**
+         * Prevent id to be -1, since it's used in SDL internal for synthetic events
+         * Appears when using Android emulator, eg:
+         *  adb shell input mouse tap 100 100
+         *  adb shell input touchscreen tap 100 100
+         */
+        if (touchDevId < 0) {
+            touchDevId -= 1;
+        }
 
         // 12290 = Samsung DeX mode desktop mouse
         // 12290 = 0x3002 = 0x2002 | 0x1002 = SOURCE_MOUSE | SOURCE_TOUCHSCREEN

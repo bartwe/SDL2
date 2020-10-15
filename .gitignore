@@ -149,3 +149,5 @@ buildbot
 test/buildbot
 
 /VisualC/.vs/
+
+/.hg/

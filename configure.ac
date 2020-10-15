@@ -413,6 +413,7 @@ SOURCES="$SOURCES $srcdir/src/file/*.c"
 SOURCES="$SOURCES $srcdir/src/haptic/*.c"
 SOURCES="$SOURCES $srcdir/src/joystick/*.c"
 SOURCES="$SOURCES $srcdir/src/libm/*.c"
+SOURCES="$SOURCES $srcdir/src/misc/*.c"
 SOURCES="$SOURCES $srcdir/src/power/*.c"
 #SOURCES="$SOURCES $srcdir/src/filesystem/*.c"
 SOURCES="$SOURCES $srcdir/src/render/*.c"
@@ -3533,6 +3534,9 @@ case "$host" in
         CheckRPATH
         CheckVivanteVideo
 
+        SOURCES="$SOURCES $srcdir/src/misc/unix/*.c"
+        have_misc=yes
+
         SOURCES="$SOURCES $srcdir/src/locale/unix/*.c"
         have_locale=yes
 
@@ -3685,6 +3689,9 @@ case "$host" in
         # Set up the core platform files
         SOURCES="$SOURCES $srcdir/src/core/windows/*.c"
 
+        SOURCES="$SOURCES $srcdir/src/misc/windows/*.c"
+        have_misc=yes
+
         # Use the Windows locale APIs.
         SOURCES="$SOURCES $srcdir/src/locale/windows/*.c"
         have_locale=yes
@@ -3752,7 +3759,11 @@ AS_HELP_STRING([--enable-render-d3d], [enable the Direct3D render driver [[defau
             fi
         fi
         # Set up files for the sensor library
-        if test x$enable_sensor = xyes; then
+        AC_CHECK_HEADER(sensorsapi.h,have_winsensors=yes,have_winsensors=no)
+        if test x$have_winsensors = xyes; then
+            AC_DEFINE(HAVE_SENSORSAPI_H, 1, [ ])
+        fi
+        if test x$enable_sensor = xyes -a x$have_winsensors = xyes; then
             AC_DEFINE(SDL_SENSOR_WINDOWS, 1, [ ])
             SOURCES="$SOURCES $srcdir/src/sensor/windows/*.c"
             have_sensor=yes
@@ -3861,6 +3872,9 @@ AS_HELP_STRING([--enable-render-d3d], [enable the Direct3D render driver [[defau
             have_filesystem=yes
         fi
 
+        SOURCES="$SOURCES $srcdir/src/misc/haiku/*.cc"
+        have_misc=yes
+
         # Set up files for the locale library
         SOURCES="$SOURCES $srcdir/src/locale/haiku/*.cc"
         have_locale=yes
@@ -3884,6 +3898,9 @@ AS_HELP_STRING([--enable-render-d3d], [enable the Direct3D render driver [[defau
         CheckMETAL
         CheckVulkan
         CheckPTHREAD
+
+        SOURCES="$SOURCES $srcdir/src/misc/ios/*.m"
+        have_misc=yes
 
         # Set up files for the locale library
         SOURCES="$SOURCES $srcdir/src/locale/macosx/*.m"
@@ -3990,6 +4007,9 @@ AS_HELP_STRING([--enable-render-d3d], [enable the Direct3D render driver [[defau
         CheckVulkan
         CheckPTHREAD
         CheckHIDAPI
+
+        SOURCES="$SOURCES $srcdir/src/misc/macosx/*.m"
+        have_misc=yes
 
         # Set up files for the locale library
         SOURCES="$SOURCES $srcdir/src/locale/macosx/*.m"
@@ -4138,6 +4158,9 @@ AS_HELP_STRING([--enable-render-d3d], [enable the Direct3D render driver [[defau
         CheckPTHREAD
         CheckClockGettime
 
+        SOURCES="$SOURCES $srcdir/src/misc/riscos/*.c"
+        have_misc=yes
+
         # Set up files for the timer library
         if test x$enable_timers = xyes; then
             AC_DEFINE(SDL_TIMER_UNIX, 1, [ ])
@@ -4173,6 +4196,9 @@ AC_SUBST([INSTALL_SDL2_CONFIG], [$enable_sdl2_config])
 
 # Verify that we have all the platform specific files we need
 
+if test x$have_misc != xyes; then
+    SOURCES="$SOURCES $srcdir/src/misc/dummy/*.c"
+fi
 if test x$have_locale != xyes; then
     SOURCES="$SOURCES $srcdir/src/locale/dummy/*.c"
 fi
