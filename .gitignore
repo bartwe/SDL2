@@ -151,3 +151,4 @@ test/buildbot
 /VisualC/.vs/
 
 /.hg/
+/VisualC/SDL/SDL.vcxproj.bak
