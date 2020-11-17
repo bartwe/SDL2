@@ -176,6 +176,8 @@
 #undef HAVE_SQRTF
 #undef HAVE_TAN
 #undef HAVE_TANF
+#undef HAVE_TRUNC
+#undef HAVE_TRUNCF
 #undef HAVE_FOPEN64
 #undef HAVE_FSEEKO
 #undef HAVE_FSEEKO64
@@ -279,6 +281,7 @@
 
 /* Enable various input drivers */
 #undef SDL_INPUT_LINUXEV
+#undef SDL_INPUT_FBSDKBIO
 #undef SDL_INPUT_LINUXKD
 #undef SDL_INPUT_TSLIB
 #undef SDL_JOYSTICK_HAIKU

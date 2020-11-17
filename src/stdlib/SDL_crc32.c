@@ -18,45 +18,35 @@
      misrepresented as being the original software.
   3. This notice may not be removed or altered from any source distribution.
 */
-#include "../../SDL_internal.h"
-
-#ifndef SDL_JOYSTICK_IOS_H
-#define SDL_JOYSTICK_IOS_H
+#include "../SDL_internal.h"
 
 #include "SDL_stdinc.h"
-#include "../SDL_sysjoystick.h"
 
-@class GCController;
 
-typedef struct joystick_hwdata
+/* Public domain CRC implementation adapted from:
+   http://home.thep.lu.se/~bjorn/crc/crc32_simple.c
+*/
+/* NOTE: DO NOT CHANGE THIS ALGORITHM
+   There is code that relies on this in the joystick code
+*/
+
+static Uint32 crc32_for_byte(Uint32 r)
 {
-    SDL_bool accelerometer;
-    SDL_bool remote;
+    int i;
+    for(i = 0; i < 8; ++i) {
+        r = (r & 1? 0: (Uint32)0xEDB88320L) ^ r >> 1;
+    }
+    return r ^ (Uint32)0xFF000000L;
+}
 
-    GCController __unsafe_unretained *controller;
-	void *rumble;
-    SDL_bool uses_pause_handler;
-    int num_pause_presses;
-    Uint32 pause_button_down_time;
-
-    char *name;
-    SDL_Joystick *joystick;
-    SDL_JoystickID instance_id;
-    SDL_JoystickGUID guid;
-
-    int naxes;
-    int nbuttons;
-    int nhats;
-    Uint32 button_mask;
-    SDL_bool has_dualshock_touchpad;
-    SDL_bool has_xbox_paddles;
-
-    struct joystick_hwdata *next;
-} joystick_hwdata;
-
-typedef joystick_hwdata SDL_JoystickDeviceItem;
-
-#endif /* SDL_JOYSTICK_IOS_H */
-
+Uint32 SDL_crc32(Uint32 crc, const void *data, size_t len)
+{
+    /* As an optimization we can precalculate a 256 entry table for each byte */
+    size_t i;
+    for(i = 0; i < len; ++i) {
+        crc = crc32_for_byte((Uint8)crc ^ ((const Uint8*)data)[i]) ^ crc >> 8;
+    }
+    return crc;
+}
 
 /* vi: set ts=4 sw=4 expandtab: */

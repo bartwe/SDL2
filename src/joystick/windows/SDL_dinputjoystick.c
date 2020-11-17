@@ -419,7 +419,7 @@ SDL_IsXInputDevice(const WCHAR *name, const GUID* pGuidProductFromDirectInput)
 
     for (i = 0; i < SDL_RawDevListCount; i++) {
         RID_DEVICE_INFO rdi;
-        char devName[128];
+        char devName[MAX_PATH];
         UINT rdiSize = sizeof(rdi);
         UINT nameSize = SDL_arraysize(devName);
 
@@ -728,12 +728,11 @@ EnumJoystickPresentCallback(const DIDEVICEINSTANCE * pdidInstance, VOID * pConte
 SDL_bool
 SDL_DINPUT_JoystickPresent(Uint16 vendor, Uint16 product, Uint16 version)
 {
-	if (dinput == NULL)
-	{
-		return SDL_FALSE;
-	}
-
     EnumJoystickPresentData data;
+
+    if (dinput == NULL) {
+        return SDL_FALSE;
+    }
 
     data.vendor = vendor;
     data.product = product;

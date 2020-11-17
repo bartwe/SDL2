@@ -2374,6 +2374,7 @@ CheckOpenGLESX11()
           #define LINUX
           #define EGL_API_FB
           #define MESA_EGL_NO_X11_HEADERS
+          #define EGL_NO_X11
           #include <EGL/egl.h>
           #include <EGL/eglext.h>
         ],[
@@ -2640,6 +2641,28 @@ CheckInputKD()
     if test x$use_input_kd = xyes; then
         AC_DEFINE(SDL_INPUT_LINUXKD, 1, [ ])
         SUMMARY_input="${SUMMARY_input} linuxkd"
+    fi
+}
+
+
+dnl See if we can use the FreeBSD kernel kbio.h header
+CheckInputKBIO()
+{
+    AC_MSG_CHECKING(for FreeBSD kbio.h)
+    use_input_kbio=no
+    AC_TRY_COMPILE([
+      #include <sys/kbio.h>
+      #include <sys/ioctl.h>
+    ],[
+    	accentmap_t accTable;
+        ioctl(0, KDENABIO, 1);
+    ],[
+    use_input_kbio=yes
+    ])
+    AC_MSG_RESULT($use_input_kbio)
+    if test x$use_input_kbio = xyes; then
+        AC_DEFINE(SDL_INPUT_FBSDKBIO, 1, [ ])
+        SUMMARY_input="${SUMMARY_input} fbsdkbio"
     fi
 }
 
@@ -3524,6 +3547,9 @@ case "$host" in
           linux)
               CheckInputKD
           ;;
+          freebsd)
+              CheckInputKBIO
+          ;;
         esac
         CheckTslib
         CheckUSBHID
@@ -3575,7 +3601,7 @@ case "$host" in
         # Set up files for the joystick library
         if test x$enable_joystick = xyes; then
           case $ARCH in
-            linux)
+            linux|freebsd)
                 AC_DEFINE(SDL_JOYSTICK_LINUX, 1, [ ])
                 SOURCES="$SOURCES $srcdir/src/joystick/linux/*.c"
                 SOURCES="$SOURCES $srcdir/src/joystick/steam/*.c"
@@ -3592,7 +3618,7 @@ case "$host" in
         # Set up files for the haptic library
         if test x$enable_haptic = xyes; then
           case $ARCH in
-            linux)
+            linux|freebsd)
                 if test x$use_input_events = xyes; then
                     AC_DEFINE(SDL_HAPTIC_LINUX, 1, [ ])
                     SOURCES="$SOURCES $srcdir/src/haptic/linux/*.c"
@@ -3658,9 +3684,12 @@ case "$host" in
         fi
         # Set up files for evdev input
         if test x$use_input_events = xyes; then
-            SOURCES="$SOURCES $srcdir/src/core/linux/SDL_evdev*.c"
+            SOURCES="$SOURCES $srcdir/src/core/linux/SDL_evdev.c"
+            SOURCES="$SOURCES $srcdir/src/core/linux/SDL_evdev_kbd.c"
+            SOURCES="$SOURCES $srcdir/src/core/freebsd/SDL_evdev_kbd_freebsd.c"
         fi       
         # Set up other core UNIX files
+        SOURCES="$SOURCES $srcdir/src/core/linux/SDL_evdev_capabilities.c"
         SOURCES="$SOURCES $srcdir/src/core/linux/SDL_threadprio.c"
         SOURCES="$SOURCES $srcdir/src/core/unix/*.c"
         ;;
