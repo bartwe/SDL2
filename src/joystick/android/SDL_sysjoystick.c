@@ -18,7 +18,6 @@
      misrepresented as being the original software.
   3. This notice may not be removed or altered from any source distribution.
 */
-
 #include "../../SDL_internal.h"
 
 #ifdef SDL_JOYSTICK_ANDROID
@@ -29,7 +28,6 @@
 
 #include "SDL_joystick.h"
 #include "SDL_hints.h"
-#include "SDL_assert.h"
 #include "SDL_timer.h"
 #include "SDL_sysjoystick_c.h"
 #include "../SDL_joystick_c.h"
@@ -630,6 +628,12 @@ ANDROID_JoystickSetLED(SDL_Joystick * joystick, Uint8 red, Uint8 green, Uint8 bl
     return SDL_Unsupported();
 }
 
+static int
+ANDROID_JoystickSetSensorsEnabled(SDL_Joystick *joystick, SDL_bool enabled)
+{
+    return SDL_Unsupported();
+}
+
 static void
 ANDROID_JoystickUpdate(SDL_Joystick * joystick)
 {
@@ -711,6 +715,7 @@ SDL_JoystickDriver SDL_ANDROID_JoystickDriver =
     ANDROID_JoystickRumbleTriggers,
     ANDROID_JoystickHasLED,
     ANDROID_JoystickSetLED,
+    ANDROID_JoystickSetSensorsEnabled,
     ANDROID_JoystickUpdate,
     ANDROID_JoystickClose,
     ANDROID_JoystickQuit,

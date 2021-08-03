@@ -26,7 +26,6 @@
 #include "SDL_atomic.h"
 #include "SDL_events.h"
 #include "SDL_sysjoystick.h"
-#include "SDL_assert.h"
 #include "SDL_hints.h"
 
 #if !SDL_EVENTS_DISABLED
@@ -51,12 +50,11 @@
 #endif
 
 static SDL_JoystickDriver *SDL_joystick_drivers[] = {
-#ifdef SDL_JOYSTICK_RAWINPUT /* Before WINDOWS_ driver, as WINDOWS wants to check if this driver is handling things */
-    /* Also before HIDAPI, as HIDAPI wants to check if this driver is handling things */
-    &SDL_RAWINPUT_JoystickDriver,
-#endif
 #ifdef SDL_JOYSTICK_HIDAPI /* Before WINDOWS_ driver, as WINDOWS wants to check if this driver is handling things */
     &SDL_HIDAPI_JoystickDriver,
+#endif
+#ifdef SDL_JOYSTICK_RAWINPUT /* Before WINDOWS_ driver, as WINDOWS wants to check if this driver is handling things */
+    &SDL_RAWINPUT_JoystickDriver,
 #endif
 #if defined(SDL_JOYSTICK_WGI)
     &SDL_WGI_JoystickDriver,
@@ -70,7 +68,7 @@ static SDL_JoystickDriver *SDL_joystick_drivers[] = {
 #ifdef SDL_JOYSTICK_IOKIT
     &SDL_DARWIN_JoystickDriver,
 #endif
-#if (defined(__IPHONEOS__) || defined(__TVOS__)) && !defined(SDL_JOYSTICK_DISABLED)
+#if (defined(__MACOSX__) || defined(__IPHONEOS__) || defined(__TVOS__)) && !defined(SDL_JOYSTICK_DISABLED)
     &SDL_IOS_JoystickDriver,
 #endif
 #ifdef SDL_JOYSTICK_ANDROID
@@ -1037,6 +1035,7 @@ SDL_JoystickClose(SDL_Joystick *joystick)
         SDL_free(touchpad->fingers);
     }
     SDL_free(joystick->touchpads);
+    SDL_free(joystick->sensors);
     SDL_free(joystick);
 
     SDL_UnlockJoysticks();
@@ -1109,7 +1108,7 @@ SDL_PrivateJoystickShouldIgnoreEvent()
 void SDL_PrivateJoystickAddTouchpad(SDL_Joystick *joystick, int nfingers)
 {
     int ntouchpads = joystick->ntouchpads + 1;
-    SDL_JoystickTouchpadInfo *touchpads = (SDL_JoystickTouchpadInfo *)SDL_realloc(joystick->touchpads, sizeof(SDL_JoystickTouchpadInfo));
+    SDL_JoystickTouchpadInfo *touchpads = (SDL_JoystickTouchpadInfo *)SDL_realloc(joystick->touchpads, (ntouchpads * sizeof(SDL_JoystickTouchpadInfo)));
     if (touchpads) {
         SDL_JoystickTouchpadInfo *touchpad = &touchpads[ntouchpads - 1];
         SDL_JoystickTouchpadFingerInfo *fingers = (SDL_JoystickTouchpadFingerInfo *)SDL_calloc(nfingers, sizeof(SDL_JoystickTouchpadFingerInfo));
@@ -1125,6 +1124,21 @@ void SDL_PrivateJoystickAddTouchpad(SDL_Joystick *joystick, int nfingers)
 
         joystick->ntouchpads = ntouchpads;
         joystick->touchpads = touchpads;
+    }
+}
+
+void SDL_PrivateJoystickAddSensor(SDL_Joystick *joystick, SDL_SensorType type)
+{
+    int nsensors = joystick->nsensors + 1;
+    SDL_JoystickSensorInfo *sensors = (SDL_JoystickSensorInfo *)SDL_realloc(joystick->sensors, (nsensors * sizeof(SDL_JoystickSensorInfo)));
+    if (sensors) {
+        SDL_JoystickSensorInfo *sensor = &sensors[nsensors - 1];
+
+        SDL_zerop(sensor);
+        sensor->type = type;
+
+        joystick->nsensors = nsensors;
+        joystick->sensors = sensors;
     }
 }
 
@@ -1169,7 +1183,7 @@ void SDL_PrivateJoystickAdded(SDL_JoystickID device_instance)
  * to have the right value for which, because the number of controllers in
  * the system is now one less.
  */
-static void UpdateEventsForDeviceRemoval()
+static void UpdateEventsForDeviceRemoval(int device_index)
 {
     int i, num_events;
     SDL_Event *events;
@@ -1187,7 +1201,19 @@ static void UpdateEventsForDeviceRemoval()
 
     num_events = SDL_PeepEvents(events, num_events, SDL_GETEVENT, SDL_JOYDEVICEADDED, SDL_JOYDEVICEADDED);
     for (i = 0; i < num_events; ++i) {
-        --events[i].jdevice.which;
+        if (events[i].cdevice.which < device_index) {
+            /* No change for index values lower than the removed device */
+        }
+        else if (events[i].cdevice.which == device_index) {
+            /* Drop this event entirely */
+            SDL_memmove(&events[i], &events[i + 1], sizeof(*events) * (num_events - (i + 1)));
+            --num_events;
+            --i;
+        }
+        else {
+            /* Fix up the device index if greater than the removed device */
+            --events[i].cdevice.which;
+        }
     }
     SDL_PeepEvents(events, num_events, SDL_ADDEVENT, 0, 0);
 
@@ -1228,17 +1254,21 @@ void SDL_PrivateJoystickRemoved(SDL_JoystickID device_instance)
 {
     SDL_Joystick *joystick = NULL;
     int player_index;
+    int device_index;
 #if !SDL_EVENTS_DISABLED
     SDL_Event event;
 #endif
 
     /* Find this joystick... */
+    device_index = 0;
     for (joystick = SDL_joysticks; joystick; joystick = joystick->next) {
         if (joystick->instance_id == device_instance) {
             SDL_PrivateJoystickForceRecentering(joystick);
             joystick->attached = SDL_FALSE;
             break;
         }
+
+        ++device_index;
     }
 
 #if !SDL_EVENTS_DISABLED
@@ -1250,7 +1280,7 @@ void SDL_PrivateJoystickRemoved(SDL_JoystickID device_instance)
         SDL_PushEvent(&event);
     }
 
-    UpdateEventsForDeviceRemoval();
+    UpdateEventsForDeviceRemoval(device_index);
 #endif /* !SDL_EVENTS_DISABLED */
 
     SDL_LockJoysticks();
@@ -1624,6 +1654,7 @@ SDL_CreateJoystickName(Uint16 vendor, Uint16 product, const char *vendor_name, c
     } replacements[] = {
         { "NVIDIA Corporation ", "" },
         { "Performance Designed Products", "PDP" },
+        { "HORI CO.,LTD.", "HORI" },
         { "HORI CO.,LTD", "HORI" },
     };
     const char *custom_name;
@@ -1711,6 +1742,12 @@ SDL_CreateJoystickName(Uint16 vendor, Uint16 product, const char *vendor_name, c
     }
 
     return name;
+}
+
+SDL_GameControllerType
+SDL_GetJoystickGameControllerTypeFromVIDPID(Uint16 vendor, Uint16 product)
+{
+    return SDL_GetJoystickGameControllerType(NULL, vendor, product, -1, 0, 0, 0);
 }
 
 SDL_GameControllerType
@@ -2206,6 +2243,7 @@ SDL_bool SDL_ShouldIgnoreJoystick(const char *name, SDL_JoystickGUID guid)
     Uint32 id;
     Uint16 vendor;
     Uint16 product;
+    SDL_GameControllerType type;
 
     SDL_GetJoystickGUIDInfo(guid, &vendor, &product, NULL);
 
@@ -2217,7 +2255,8 @@ SDL_bool SDL_ShouldIgnoreJoystick(const char *name, SDL_JoystickGUID guid)
         }
     }
 
-    if (SDL_GetJoystickGameControllerType(name, vendor, product, -1, 0, 0, 0) == SDL_CONTROLLER_TYPE_PS4 && SDL_IsPS4RemapperRunning()) {
+    type = SDL_GetJoystickGameControllerType(name, vendor, product, -1, 0, 0, 0);
+    if ((type == SDL_CONTROLLER_TYPE_PS4 || type == SDL_CONTROLLER_TYPE_PS5) && SDL_IsPS4RemapperRunning()) {
         return SDL_TRUE;
     }
 
@@ -2463,8 +2502,8 @@ int SDL_PrivateJoystickTouchpad(SDL_Joystick *joystick, int touchpad, int finger
 {
     SDL_JoystickTouchpadInfo *touchpad_info;
     SDL_JoystickTouchpadFingerInfo *finger_info;
-#if !SDL_EVENTS_DISABLED
     int posted;
+#if !SDL_EVENTS_DISABLED
     Uint32 event_type;
 #endif
 
@@ -2541,6 +2580,43 @@ int SDL_PrivateJoystickTouchpad(SDL_Joystick *joystick, int touchpad, int finger
         posted = SDL_PushEvent(&event) == 1;
     }
 #endif /* !SDL_EVENTS_DISABLED */
+    return posted;
+}
+
+int SDL_PrivateJoystickSensor(SDL_Joystick *joystick, SDL_SensorType type, const float *data, int num_values)
+{
+    int i;
+    int posted = 0;
+
+    for (i = 0; i < joystick->nsensors; ++i) {
+        SDL_JoystickSensorInfo *sensor = &joystick->sensors[i];
+
+        if (sensor->type == type) {
+            if (sensor->enabled) {
+                num_values = SDL_min(num_values, SDL_arraysize(sensor->data));
+                if (SDL_memcmp(data, sensor->data, num_values*sizeof(*data)) != 0) {
+
+                    /* Update internal sensor state */
+                    SDL_memcpy(sensor->data, data, num_values*sizeof(*data));
+
+                    /* Post the event, if desired */
+#if !SDL_EVENTS_DISABLED
+                    if (SDL_GetEventState(SDL_CONTROLLERSENSORUPDATE) == SDL_ENABLE) {
+                        SDL_Event event;
+                        event.type = SDL_CONTROLLERSENSORUPDATE;
+                        event.csensor.which = joystick->instance_id;
+                        event.csensor.sensor = type;
+                        num_values = SDL_min(num_values, SDL_arraysize(event.csensor.data));
+                        SDL_memset(event.csensor.data, 0, sizeof(event.csensor.data));
+                        SDL_memcpy(event.csensor.data, data, num_values*sizeof(*data));
+                        posted = SDL_PushEvent(&event) == 1;
+                    }
+#endif /* !SDL_EVENTS_DISABLED */
+                }
+            }
+            break;
+        }
+    }
     return posted;
 }
 

@@ -1,6 +1,7 @@
 dnl Process this file with autoconf to produce a configure script.
-AC_INIT(README.txt)
-AC_CONFIG_HEADER(include/SDL_config.h)
+AC_INIT
+AC_CONFIG_SRCDIR(README.txt)
+AC_CONFIG_HEADERS(include/SDL_config.h)
 AC_CONFIG_AUX_DIR(build-scripts)
 AC_CONFIG_MACRO_DIR([acinclude])
 
@@ -20,9 +21,9 @@ dnl Set various version strings - taken gratefully from the GTk sources
 #
 SDL_MAJOR_VERSION=2
 SDL_MINOR_VERSION=0
-SDL_MICRO_VERSION=13
-SDL_INTERFACE_AGE=1
-SDL_BINARY_AGE=13
+SDL_MICRO_VERSION=14
+SDL_INTERFACE_AGE=0
+SDL_BINARY_AGE=14
 SDL_VERSION=$SDL_MAJOR_VERSION.$SDL_MINOR_VERSION.$SDL_MICRO_VERSION
 
 AC_SUBST(SDL_MAJOR_VERSION)
@@ -51,12 +52,10 @@ dnl Detect the canonical build and host environments
 dnl AC_CANONICAL_HOST
 
 dnl Check for tools
-AC_PROG_LIBTOOL
 AC_PROG_CC
 AC_PROG_CXX
 AC_PROG_INSTALL
 AC_PROG_MAKE_SET
-AC_LIBTOOL_RC
 PKG_PROG_PKG_CONFIG
 
 dnl Make sure that srcdir is a full pathname
@@ -346,7 +345,7 @@ if test x$enable_libc = xyes; then
         AC_DEFINE(HAVE_MPROTECT, 1, [ ])
         ]),
     )
-    AC_CHECK_FUNCS(malloc calloc realloc free getenv setenv putenv unsetenv qsort abs bcopy memset memcpy memmove wcslen wcslcpy wcslcat wcsdup wcsstr wcscmp wcsncmp strlen strlcpy strlcat _strrev _strupr _strlwr strchr strrchr strstr strtok_r itoa _ltoa _uitoa _ultoa strtol strtoul _i64toa _ui64toa strtoll strtoull atoi atof strcmp strncmp _stricmp strcasecmp _strnicmp strncasecmp vsscanf vsnprintf fopen64 fseeko fseeko64 sigaction setjmp nanosleep sysconf sysctlbyname getauxval poll _Exit)
+    AC_CHECK_FUNCS(malloc calloc realloc free getenv setenv putenv unsetenv qsort abs bcopy memset memcpy memmove wcslen wcslcpy wcslcat wcsdup wcsstr wcscmp wcsncmp wcscasecmp _wcsicmp wcsncasecmp _wcsnicmp strlen strlcpy strlcat _strrev _strupr _strlwr strchr strrchr strstr strtok_r itoa _ltoa _uitoa _ultoa strtol strtoul _i64toa _ui64toa strtoll strtoull atoi atof strcmp strncmp _stricmp strcasecmp _strnicmp strncasecmp vsscanf vsnprintf fopen64 fseeko fseeko64 sigaction setjmp nanosleep sysconf sysctlbyname getauxval elf_aux_info poll _Exit)
 
     AC_CHECK_LIB(m, pow, [LIBS="$LIBS -lm"; EXTRA_LDFLAGS="$EXTRA_LDFLAGS -lm"])
     AC_CHECK_FUNCS(acos acosf asin asinf atan atanf atan2 atan2f ceil ceilf copysign copysignf cos cosf exp expf fabs fabsf floor floorf trunc truncf fmod fmodf log logf log10 log10f pow powf scalbn scalbnf sin sinf sqrt sqrtf tan tanf)
@@ -1230,7 +1229,7 @@ AS_HELP_STRING([--enable-fusionsound], [use FusionSound audio driver [[default=n
             AC_DEFINE(SDL_AUDIO_DRIVER_FUSIONSOUND, 1, [ ])
             SOURCES="$SOURCES $srcdir/src/audio/fusionsound/*.c"
             EXTRA_CFLAGS="$EXTRA_CFLAGS $FUSIONSOUND_CFLAGS"
-            
+
             AC_ARG_ENABLE(fusionsound-shared,
 AS_HELP_STRING([--enable-fusionsound-shared], [dynamically load fusionsound audio support [[default=yes]]]),
                           , enable_fusionsound_shared=yes)
@@ -1250,7 +1249,7 @@ AS_HELP_STRING([--enable-fusionsound-shared], [dynamically load fusionsound audi
                 SUMMARY_audio="${SUMMARY_audio} fusionsound"
             fi
             AC_MSG_RESULT($fusionsound_shared)
-            
+
             have_audio=yes
         fi
     fi
@@ -1320,13 +1319,13 @@ dnl Check for ARM instruction support using gas syntax
 CheckARM()
 {
     AC_ARG_ENABLE(arm-simd,
-AC_HELP_STRING([--enable-arm-simd], [use SIMD assembly blitters on ARM [[default=no]]]),
+AS_HELP_STRING([--enable-arm-simd], [use SIMD assembly blitters on ARM [[default=no]]]),
                   enable_arm_simd=$enableval, enable_arm_simd=no)
     if test x$enable_video = xyes -a x$enable_assembly = xyes -a x$enable_arm_simd = xyes; then
         save_CFLAGS="$CFLAGS"
         have_arm_simd=no
         CFLAGS="-x assembler-with-cpp $CFLAGS"
-        
+
         AC_MSG_CHECKING(for ARM SIMD)
         AC_COMPILE_IFELSE([AC_LANG_SOURCE([[
         .text
@@ -1341,12 +1340,11 @@ AC_HELP_STRING([--enable-arm-simd], [use SIMD assembly blitters on ARM [[default
         uqadd8 r0, r0, r0
         ]])], have_arm_simd=yes)
         AC_MSG_RESULT($have_arm_simd)
-        
+
         CFLAGS="$save_CFLAGS"
-        
+
         if test x$have_arm_simd = xyes; then
             AC_DEFINE(SDL_ARM_SIMD_BLITTERS, 1, [ ])
-dnl            SOURCES="$SOURCES $srcdir/src/video/arm/pixman-arm-simd*.c"
             SOURCES="$SOURCES $srcdir/src/video/arm/pixman-arm-simd*.S"
             WARN_ABOUT_ARM_SIMD_ASM_MIT="yes"
         fi
@@ -1357,13 +1355,13 @@ dnl Check for ARM NEON instruction support using gas syntax
 CheckNEON()
 {
     AC_ARG_ENABLE(arm-neon,
-AC_HELP_STRING([--enable-arm-neon], [use NEON assembly blitters on ARM [[default=no]]]),
+AS_HELP_STRING([--enable-arm-neon], [use NEON assembly blitters on ARM [[default=no]]]),
                   enable_arm_neon=$enableval, enable_arm_neon=no)
     if test x$enable_video = xyes -a x$enable_assembly = xyes -a x$enable_arm_neon = xyes; then
         save_CFLAGS="$CFLAGS"
         have_arm_neon=no
         CFLAGS="-x assembler-with-cpp $CFLAGS"
-        
+
         AC_MSG_CHECKING(for ARM NEON)
         AC_COMPILE_IFELSE([AC_LANG_SOURCE([[
         .text
@@ -1380,12 +1378,10 @@ AC_HELP_STRING([--enable-arm-neon], [use NEON assembly blitters on ARM [[default
         vmovn.u16 d0, q0
         ]])], have_arm_neon=yes)
         AC_MSG_RESULT($have_arm_neon)
-        
         CFLAGS="$save_CFLAGS"
-        
+
         if test x$have_arm_neon = xyes; then
             AC_DEFINE(SDL_ARM_NEON_BLITTERS, 1, [ ])
-dnl            SOURCES="$SOURCES $srcdir/src/video/arm/pixman-arm-neon*.c"
             SOURCES="$SOURCES $srcdir/src/video/arm/pixman-arm-neon*.S"
             WARN_ABOUT_ARM_NEON_ASM_MIT="yes"
         fi
@@ -1608,7 +1604,6 @@ AS_HELP_STRING([--enable-wayland-shared], [dynamically load Wayland support [[de
     fi
 }
 
-
 dnl Check for Native Client stuff
 CheckNativeClient()
 {
@@ -1634,7 +1629,6 @@ CheckNativeClient()
         SUMMARY_video="${SUMMARY_video} nacl opengles2"
         ])
 }
-
 
 CheckRPI()
 {
@@ -1674,7 +1668,7 @@ AS_HELP_STRING([--enable-video-rpi], [use Raspberry Pi video driver [[default=ye
 
         # Restore the compiler flags and libraries
         CFLAGS="$ac_save_cflags"; LIBS="$ac_save_libs"
-        
+
         if test x$have_video_rpi = xyes; then
             CFLAGS="$CFLAGS $RPI_CFLAGS"
             SDL_CFLAGS="$SDL_CFLAGS $RPI_CFLAGS"
@@ -2142,7 +2136,7 @@ AS_HELP_STRING([--enable-video-cocoa], [use Cocoa video driver [[default=yes]]])
 CheckMETAL()
 {
     AC_ARG_ENABLE(video-metal,
-AC_HELP_STRING([--enable-video-metal], [include Metal support [[default=yes]]]),
+AS_HELP_STRING([--enable-video-metal], [include Metal support [[default=yes]]]),
               , enable_video_metal=yes)
     AC_ARG_ENABLE(render-metal,
 AS_HELP_STRING([--enable-render-metal], [enable the Metal render driver [[default=yes]]]),
@@ -2180,7 +2174,6 @@ AS_HELP_STRING([--enable-render-metal], [enable the Metal render driver [[defaul
         fi
     fi
 }
-
 
 dnl Find DirectFB
 CheckDirectFB()
@@ -2260,6 +2253,7 @@ AS_HELP_STRING([--enable-kmsdrm-shared], [dynamically load kmsdrm support [[defa
 
             AC_DEFINE(SDL_VIDEO_DRIVER_KMSDRM, 1, [ ])
             SOURCES="$SOURCES $srcdir/src/video/kmsdrm/*.c"
+            SOURCES="$SOURCES $srcdir/src/video/kmsdrm_legacy/*.c"
             EXTRA_CFLAGS="$EXTRA_CFLAGS $LIBDRM_CFLAGS $LIBGBM_CFLAGS"
 
             AC_MSG_CHECKING(for kmsdrm dynamic loading support)
@@ -2385,7 +2379,7 @@ CheckOpenGLESX11()
         if test x$video_opengl_egl = xyes; then
             AC_DEFINE(SDL_VIDEO_OPENGL_EGL, 1, [ ])
         fi
-        
+
         if test x$enable_video_opengles1 = xyes; then
             AC_MSG_CHECKING(for OpenGL ES v1 headers)
             video_opengles_v1=no
@@ -2403,7 +2397,7 @@ CheckOpenGLESX11()
                 SUMMARY_video="${SUMMARY_video} opengl_es1"
             fi
         fi
-        
+
         if test x$enable_video_opengles2 = xyes; then
             AC_MSG_CHECKING(for OpenGL ES v2 headers)
             video_opengles_v2=no
@@ -2454,7 +2448,7 @@ CheckWINDOWSGLES()
             AC_DEFINE(SDL_VIDEO_OPENGL_EGL, 1, [ ])
             SUMMARY_video="${SUMMARY_video} opengl_es1"
         fi
-       
+
         AC_MSG_CHECKING(for OpenGL ES v2 headers)
         video_opengles_v2=no
         AC_TRY_COMPILE([
@@ -2644,7 +2638,6 @@ CheckInputKD()
     fi
 }
 
-
 dnl See if we can use the FreeBSD kernel kbio.h header
 CheckInputKBIO()
 {
@@ -2722,6 +2715,28 @@ AS_HELP_STRING([--enable-ime], [enable IME support [[default=yes]]]),
     fi
 }
 
+dnl Check inotify presense
+CheckInotify()
+{
+    save_LIBS="$LIBS"
+    case "$host" in
+     *-*-freebsd*) LIBS="$LIBS -linotify"
+      ;;
+    esac
+    AC_CHECK_HEADERS(sys/inotify.h, [have_inotify_inotify_h_hdr=yes])
+    AC_CHECK_FUNCS(inotify_init, [have_inotify=yes])
+    AC_CHECK_FUNCS(inotify_init1)
+    if test x$have_inotify_inotify_h_hdr = xyes -a x$have_inotify = xyes; then
+        AC_DEFINE(HAVE_INOTIFY, 1, [ ])
+        case "$host" in
+            *-*-freebsd*)
+                EXTRA_LDFLAGS="$EXTRA_LDFLAGS -linotify"
+                ;;
+        esac
+    fi
+    LIBS="$save_LIBS"
+}
+
 dnl See if the platform has libibus IME support.
 CheckIBus()
 {
@@ -2735,9 +2750,6 @@ AS_HELP_STRING([--enable-ibus], [enable IBus support [[default=yes]]]),
         AC_CHECK_HEADER(ibus-1.0/ibus.h,
                         have_ibus_ibus_h_hdr=yes,
                         have_ibus_ibus_h_hdr=no)
-        AC_CHECK_HEADER(sys/inotify.h,
-                        have_inotify_inotify_h_hdr=yes,
-                        have_inotify_inotify_h_hdr=no)
         CFLAGS="$save_CFLAGS"
         if test x$have_ibus_ibus_h_hdr = xyes; then
             if test x$enable_ime != xyes; then
@@ -2780,26 +2792,43 @@ AS_HELP_STRING([--enable-fcitx], [enable fcitx support [[default=yes]]]),
     fi
 }
 
-dnl See if we can use the Touchscreen input library
-CheckTslib()
+dnl Check to see if GameController framework support is desired
+CheckJoystickMFI()
 {
-    AC_ARG_ENABLE(input-tslib,
-AS_HELP_STRING([--enable-input-tslib], [use the Touchscreen library for input [[default=yes]]]),
-                  , enable_input_tslib=yes)
-    if test x$enable_input_tslib = xyes; then
-        AC_MSG_CHECKING(for Touchscreen library support)
-        enable_input_tslib=no
-        AC_TRY_COMPILE([
-          #include "tslib.h"
+    AC_ARG_ENABLE(joystick-mfi,
+AS_HELP_STRING([--enable-joystick-mfi], [include macOS MFI joystick support [[default=yes]]]),
+              , enable_joystick_mfi=yes)
+
+    if test x$enable_joystick_mfi = xyes; then
+        save_CFLAGS="$CFLAGS"
+        save_LDFLAGS="$LDFLAGS"
+        dnl Work around that we don't have Objective-C support in autoconf
+        CFLAGS="$CFLAGS -x objective-c -fobjc-weak"
+        LDFLAGS="$LDFLAGS -Wl,-weak_framework,CoreHaptics -Wl,-weak_framework,GameController"
+        AC_MSG_CHECKING(for GameController framework)
+        enable_joystick_mfi=no
+        AC_TRY_LINK([
+          #include <AvailabilityMacros.h>
+          #include <TargetConditionals.h>
+          #import <GameController/GameController.h>
         ],[
+          #if MAC_OS_X_VERSION_MIN_REQUIRED < 1080
+          #error GameController framework doesn't work on this configuration
+          #endif
+          #if TARGET_CPU_X86
+          #error GameController framework doesn't work on this configuration
+          #endif
         ],[
-        enable_input_tslib=yes
+        enable_joystick_mfi=yes
         ])
-        AC_MSG_RESULT($enable_input_tslib)
-        if test x$enable_input_tslib = xyes; then
-            AC_DEFINE(SDL_INPUT_TSLIB, 1, [ ])
-            EXTRA_LDFLAGS="$EXTRA_LDFLAGS -lts"
-            SUMMARY_input="${SUMMARY_input} ts"
+        CFLAGS="$save_CFLAGS"
+        LDFLAGS="$save_LDFLAGS"
+
+        AC_MSG_RESULT($enable_joystick_mfi)
+        if test x$enable_joystick_mfi = xyes; then
+            AC_DEFINE(SDL_JOYSTICK_MFI, 1, [ ])
+            EXTRA_CFLAGS="$EXTRA_CFLAGS -fobjc-weak -Wno-unused-command-line-argument"
+            EXTRA_LDFLAGS="$EXTRA_LDFLAGS -Wl,-weak_framework,CoreHaptics -Wl,-weak_framework,GameController"
         fi
     fi
 }
@@ -3169,7 +3198,7 @@ dnl Check for the usbhid(3) library on *BSD
 CheckUSBHID()
 {
     case "$host" in
-        *-*-*bsd*)
+        *-*-*bsd*|*-*-dragonfly*)
             if test x$enable_joystick = xyes; then
                 AC_CHECK_LIB(usbhid, hid_init, have_libusbhid=yes)
                 if test x$have_libusbhid = xyes; then
@@ -3181,7 +3210,7 @@ CheckUSBHID()
                     AC_CHECK_HEADER(libusb.h, [USB_CFLAGS="-DHAVE_LIBUSB_H"])
                     AC_CHECK_LIB(usb, hid_init, [USB_LIBS="$USB_LIBS -lusb"])
                 fi
-                
+
                 save_CFLAGS="$CFLAGS"
                 CFLAGS="$CFLAGS $USB_CFLAGS"
 
@@ -3193,8 +3222,8 @@ CheckUSBHID()
                   #include <usb.h>
                   #endif
                   #ifdef __DragonFly__
-                  # include <bus/usb/usb.h>
-                  # include <bus/usb/usbhid.h>
+                  # include <bus/u4b/usb.h>
+                  # include <bus/u4b/usbhid.h>
                   #else
                   # include <dev/usb/usb.h>
                   # include <dev/usb/usbhid.h>
@@ -3224,8 +3253,8 @@ CheckUSBHID()
                       #include <usb.h>
                       #endif
                       #ifdef __DragonFly__
-                      # include <bus/usb/usb.h>
-                      # include <bus/usb/usbhid.h>
+                      # include <bus/u4b/usb.h>
+                      # include <bus/u4b/usbhid.h>
                       #else
                       # include <dev/usb/usb.h>
                       # include <dev/usb/usbhid.h>
@@ -3247,7 +3276,7 @@ CheckUSBHID()
                         USB_CFLAGS="$USB_CFLAGS -DUSBHID_UCR_DATA"
                     fi
                     AC_MSG_RESULT($have_usbhid_ucr_data)
-                    
+
                     AC_MSG_CHECKING(for new usbhid API)
                     have_usbhid_new=no
                     AC_TRY_COMPILE([
@@ -3256,8 +3285,8 @@ CheckUSBHID()
                       #include <usb.h>
                       #endif
                       #ifdef __DragonFly__
-                      #include <bus/usb/usb.h>
-                      #include <bus/usb/usbhid.h>
+                      #include <bus/u4b/usb.h>
+                      #include <bus/u4b/usbhid.h>
                       #else
                       #include <dev/usb/usb.h>
                       #include <dev/usb/usbhid.h>
@@ -3309,47 +3338,45 @@ CheckUSBHID()
 dnl Check for HIDAPI joystick drivers
 CheckHIDAPI()
 {
-    # The hidraw support doesn't catch Xbox, PS4 and Nintendo controllers,
-    # so we'll just use libusb when it's available.
-    case "$host" in
-        # libusb does not support iOS
-        *-ios-* )
-            skiplibusb=yes
-            ;;
-        # On the other hand, *BSD specifically uses libusb only
-        *-*-*bsd* )
-            onlylibusb=yes
-            ;;
-        # RAWINPUT is only available on Win32, but can be enabled if HIDAPI is
-        *-*-cygwin* | *-*-mingw32*)
-            userawinput=yes
-            ;;
-    esac
-
     AC_ARG_ENABLE(hidapi,
-AS_HELP_STRING([--enable-hidapi], [use HIDAPI for low level joystick drivers [[default=no]]]),
-                  , enable_hidapi=no)
+AS_HELP_STRING([--enable-hidapi], [use HIDAPI for low level joystick drivers [[default=yes]]]),
+                  , enable_hidapi=yes)
+    AC_ARG_ENABLE(hidapi-libusb,
+AS_HELP_STRING([--enable-hidapi-libusb], [use libusb for low level joystick drivers [[default=maybe]]]),
+                  , enable_hidapi_libusb=maybe)
+
     if test x$enable_joystick = xyes -a x$enable_hidapi = xyes; then
-        if test x$skiplibusb = xyes; then
-            hidapi_support=yes
-        else
+        case "$host" in
+            # libusb does not support iOS
+            *-ios-* )
+                enable_hidapi_libusb=no
+                ;;
+            # On the other hand, *BSD specifically uses libusb only
+            *-*-*bsd* )
+                enable_hidapi_libusb=yes
+                require_hidapi_libusb=yes
+                ;;
+            # RAWINPUT is only available on Win32, but can be enabled if HIDAPI is
+            *-*-cygwin* | *-*-mingw32*)
+                enable_joystick_rawinput=yes
+                ;;
+        esac
+
+        hidapi_support=yes
+        if test x$enable_hidapi_libusb = xyes; then
             PKG_CHECK_MODULES([LIBUSB], [libusb-1.0], have_libusb=yes, have_libusb=no)
             save_CFLAGS="$CFLAGS"
             CFLAGS="$save_CFLAGS $LIBUSB_CFLAGS"
             AC_CHECK_HEADER(libusb.h, have_libusb_h=yes)
             CFLAGS="$save_CFLAGS"
-            if test x$have_libusb_h = xyes; then
-                hidapi_support=yes
-            elif test x$onlylibusb = xyes; then
+            if test x$have_libusb_h = xno && test x$require_hidapi_libusb = xyes; then
                 hidapi_support=no
-            else
-                hidapi_support=yes
             fi
         fi
 
         if test x$hidapi_support = xyes; then
             AC_DEFINE(SDL_JOYSTICK_HIDAPI, 1, [ ])
-            if test x$userawinput = xyes; then
+            if test x$enable_joystick_rawinput = xyes; then
                 AC_DEFINE(SDL_JOYSTICK_RAWINPUT, 1, [ ])
             fi
             EXTRA_CFLAGS="$EXTRA_CFLAGS -I$srcdir/src/hidapi/hidapi"
@@ -3358,8 +3385,7 @@ AS_HELP_STRING([--enable-hidapi], [use HIDAPI for low level joystick drivers [[d
 
             if test x$have_libusb_h = xyes; then
                 EXTRA_CFLAGS="$EXTRA_CFLAGS $LIBUSB_CFLAGS"
-                if test x$onlylibusb = xyes; then
-                    SOURCES="$SOURCES $srcdir/src/hidapi/libusb/hid.c"
+                if test x$require_hidapi_libusb = xyes; then
                     EXTRA_LDFLAGS="$EXTRA_LDFLAGS $LIBUSB_LIBS"
                 else
                     if test x$have_loadso != xyes; then
@@ -3459,7 +3485,6 @@ AS_HELP_STRING([--enable-joystick-virtual], [enable virtual joystick APIs [[defa
     fi
 }
 
-
 dnl Do this on all platforms, before everything else (other things might want to override it).
 CheckWarnAll
 CheckNoStrictAliasing
@@ -3482,11 +3507,9 @@ case "$host" in
                 EXTRA_CFLAGS="$EXTRA_CFLAGS $ANDROID_CFLAGS"
                 EXTRA_LDFLAGS="$EXTRA_LDFLAGS -ldl -lGLESv1_CM -lGLESv2 -llog -landroid"
                 SDLMAIN_SOURCES="$srcdir/src/main/android/*.c"
-
                 if test x$enable_video = xyes; then
                     SOURCES="$SOURCES $srcdir/src/core/android/*.c $srcdir/src/video/android/*.c"
-                    # FIXME: confdefs? Not AC_DEFINE?
-                    $as_echo "#define SDL_VIDEO_DRIVER_ANDROID 1" >>confdefs.h
+                    AC_DEFINE(SDL_VIDEO_DRIVER_ANDROID, 1, [ ])
                     SUMMARY_video="${SUMMARY_video} android"
                 fi
                 ;;
@@ -3541,6 +3564,7 @@ case "$host" in
         CheckLibUDev
         CheckDBus
         CheckIME
+        CheckInotify
         CheckIBus
         CheckFcitx
         case $ARCH in
@@ -3551,7 +3575,6 @@ case "$host" in
               CheckInputKBIO
           ;;
         esac
-        CheckTslib
         CheckUSBHID
         CheckHIDAPI
         CheckPTHREAD
@@ -3601,11 +3624,19 @@ case "$host" in
         # Set up files for the joystick library
         if test x$enable_joystick = xyes; then
           case $ARCH in
-            linux|freebsd)
+            linux)
                 AC_DEFINE(SDL_JOYSTICK_LINUX, 1, [ ])
                 SOURCES="$SOURCES $srcdir/src/joystick/linux/*.c"
                 SOURCES="$SOURCES $srcdir/src/joystick/steam/*.c"
                 have_joystick=yes
+            ;;
+            freebsd)
+                if test x$use_input_events = xyes; then
+                    AC_DEFINE(SDL_JOYSTICK_LINUX, 1, [ ])
+                    SOURCES="$SOURCES $srcdir/src/joystick/linux/*.c"
+                    SOURCES="$SOURCES $srcdir/src/joystick/steam/*.c"
+                    have_joystick=yes
+                fi
             ;;
             android)
                 AC_DEFINE(SDL_JOYSTICK_ANDROID, 1, [ ])
@@ -3687,7 +3718,7 @@ case "$host" in
             SOURCES="$SOURCES $srcdir/src/core/linux/SDL_evdev.c"
             SOURCES="$SOURCES $srcdir/src/core/linux/SDL_evdev_kbd.c"
             SOURCES="$SOURCES $srcdir/src/core/freebsd/SDL_evdev_kbd_freebsd.c"
-        fi       
+        fi
         # Set up other core UNIX files
         SOURCES="$SOURCES $srcdir/src/core/linux/SDL_evdev_capabilities.c"
         SOURCES="$SOURCES $srcdir/src/core/linux/SDL_threadprio.c"
@@ -4056,6 +4087,8 @@ AS_HELP_STRING([--enable-render-d3d], [enable the Direct3D render driver [[defau
         if test x$enable_joystick = xyes; then
             AC_DEFINE(SDL_JOYSTICK_IOKIT, 1, [ ])
             SOURCES="$SOURCES $srcdir/src/joystick/darwin/*.c"
+            SOURCES="$SOURCES $srcdir/src/joystick/iphoneos/*.m"
+            CheckJoystickMFI
             have_joystick=yes
         fi
         # Set up files for the haptic library
@@ -4114,7 +4147,7 @@ AS_HELP_STRING([--enable-render-d3d], [enable the Direct3D render driver [[defau
             SOURCES="$SOURCES $srcdir/src/timer/unix/*.c"
             have_timers=yes
         fi
-        
+
         if test x$enable_filesystem = xyes; then
             AC_DEFINE(SDL_FILESYSTEM_NACL, 1, [ ])
             SOURCES="$SOURCES $srcdir/src/filesystem/nacl/*.c"
@@ -4151,7 +4184,7 @@ AS_HELP_STRING([--enable-render-d3d], [enable the Direct3D render driver [[defau
             SOURCES="$SOURCES $srcdir/src/power/emscripten/*.c"
             have_power=yes
         fi
-        
+
         # Set up files for the power library
         if test x$enable_joystick = xyes; then
             AC_DEFINE(SDL_JOYSTICK_EMSCRIPTEN, 1, [ ])

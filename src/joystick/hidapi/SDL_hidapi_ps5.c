@@ -24,6 +24,7 @@
 
 #include "SDL_hints.h"
 #include "SDL_events.h"
+#include "SDL_timer.h"
 #include "SDL_joystick.h"
 #include "SDL_gamecontroller.h"
 #include "../SDL_sysjoystick.h"
@@ -36,6 +37,15 @@
 /* Define this if you want to log all packets from the controller */
 /*#define DEBUG_PS5_PROTOCOL*/
 
+/* Define this if you want to log calibration data */
+/*#define DEBUG_PS5_CALIBRATION*/
+
+#define GYRO_RES_PER_DEGREE 1024.0f
+#define ACCEL_RES_PER_G     8192.0f
+#define BLUETOOTH_DISCONNECT_TIMEOUT_MS 500
+
+#define LOAD16(A, B)  (Sint16)((Uint16)(A) | (((Uint16)(B)) << 8))
+
 typedef enum
 {
     k_EPS5ReportIdState = 0x01,
@@ -46,6 +56,7 @@ typedef enum
 
 typedef enum
 {
+    k_EPS5FeatureReportIdCalibration = 0x05,
     k_EPS5FeatureReportIdSerialNumber = 0x09,
 } EPS5FeatureReportId;
 
@@ -72,8 +83,12 @@ typedef struct
     Uint8 rgucButtonsAndHat[3];         /* 7 */
     Uint8 ucZero;                       /* 10 */
     Uint8 rgucPacketSequence[4];        /* 11 - 32 bit little endian */
-    Uint8 rgucAccel[6];                 /* 15 */
-    Uint8 rgucGyro[6];                  /* 21 */
+    Uint8 rgucGyroX[2];                 /* 15 */
+    Uint8 rgucGyroY[2];                 /* 17 */
+    Uint8 rgucGyroZ[2];                 /* 19 */
+    Uint8 rgucAccelX[2];                /* 21 */
+    Uint8 rgucAccelY[2];                /* 23 */
+    Uint8 rgucAccelZ[2];                /* 25 */
     Uint8 rgucTimer1[4];                /* 27 - 32 bit little endian */
     Uint8 ucBatteryTemp;                /* 31 */
     Uint8 ucTouchpadCounter1;           /* 32 - high bit clear + counter */
@@ -90,33 +105,64 @@ typedef struct
 
 typedef struct
 {
-    Uint8 ucEnableBits1;
-    Uint8 ucEnableBits2;
-    Uint8 ucRumbleRight;
-    Uint8 ucRumbleLeft;
-    Uint8 rgucUnknown1[6];
-    Uint8 rgucRightTriggerEffect[11];
-    Uint8 rgucLeftTriggerEffect[11];
-    Uint8 rgucUnknown2[6];
-    Uint8 ucLedFlags;
-    Uint8 rgucUnknown3[2];
-    Uint8 ucLedAnim;
-    Uint8 ucLedBrightness;
-    Uint8 ucPadLights;
-    Uint8 ucLedRed;
-    Uint8 ucLedGreen;
-    Uint8 ucLedBlue;
+    Uint8 ucEnableBits1;                /* 0 */
+    Uint8 ucEnableBits2;                /* 1 */
+    Uint8 ucRumbleRight;                /* 2 */
+    Uint8 ucRumbleLeft;                 /* 3 */
+    Uint8 ucHeadphoneVolume;            /* 4 */
+    Uint8 ucSpeakerVolume;              /* 5 */
+    Uint8 ucMicrophoneVolume;           /* 6 */
+    Uint8 ucAudioEnableBits;            /* 7 */
+    Uint8 ucMicLightMode;               /* 8 */
+    Uint8 ucAudioMuteBits;              /* 9 */
+    Uint8 rgucRightTriggerEffect[11];   /* 10 */
+    Uint8 rgucLeftTriggerEffect[11];    /* 21 */
+    Uint8 rgucUnknown1[6];              /* 32 */
+    Uint8 ucLedFlags;                   /* 38 */
+    Uint8 rgucUnknown2[2];              /* 39 */
+    Uint8 ucLedAnim;                    /* 41 */
+    Uint8 ucLedBrightness;              /* 42 */
+    Uint8 ucPadLights;                  /* 43 */
+    Uint8 ucLedRed;                     /* 44 */
+    Uint8 ucLedGreen;                   /* 45 */
+    Uint8 ucLedBlue;                    /* 46 */
 } DS5EffectsState_t;
+
+typedef enum {
+    k_EDS5EffectNone,
+    k_EDS5EffectRumbleStart,
+    k_EDS5EffectRumble,
+    k_EDS5EffectLEDReset,
+    k_EDS5EffectLED,
+    k_EDS5EffectPadLights,
+    k_EDS5EffectMicLight,
+} EDS5Effect;
+
+typedef enum {
+    k_EDS5LEDResetStateNone,
+    k_EDS5LEDResetStatePending,
+    k_EDS5LEDResetStateComplete,
+} EDS5LEDResetState;
+
+typedef struct {
+    Sint16 bias;
+    float sensitivity;
+} IMUCalibrationData;
 
 typedef struct {
     SDL_bool is_bluetooth;
+    SDL_bool report_sensors;
+    SDL_bool hardware_calibration;
+    IMUCalibrationData calibration[6];
+    Uint32 last_packet;
     int player_index;
-    Uint16 rumble_left;
-    Uint16 rumble_right;
+    Uint8 rumble_left;
+    Uint8 rumble_right;
     SDL_bool color_set;
     Uint8 led_red;
     Uint8 led_green;
     Uint8 led_blue;
+    EDS5LEDResetState led_reset_state;
     union
     {
         PS5SimpleStatePacket_t simple;
@@ -128,7 +174,7 @@ typedef struct {
 static SDL_bool
 HIDAPI_DriverPS5_IsSupportedDevice(const char *name, SDL_GameControllerType type, Uint16 vendor_id, Uint16 product_id, Uint16 version, int interface_number, int interface_class, int interface_subclass, int interface_protocol)
 {
-    return (type == SDL_CONTROLLER_TYPE_PS5);
+    return (type == SDL_CONTROLLER_TYPE_PS5) ? SDL_TRUE : SDL_FALSE;
 }
 
 static const char *
@@ -177,7 +223,7 @@ SetLedsForPlayerIndex(DS5EffectsState_t *effects, int player_index)
 static SDL_bool
 HIDAPI_DriverPS5_InitDevice(SDL_HIDAPI_Device *device)
 {
-    return HIDAPI_JoystickConnected(device, NULL, SDL_FALSE);
+    return HIDAPI_JoystickConnected(device, NULL);
 }
 
 static int
@@ -186,13 +232,134 @@ HIDAPI_DriverPS5_GetDevicePlayerIndex(SDL_HIDAPI_Device *device, SDL_JoystickID 
     return -1;
 }
 
+static void
+HIDAPI_DriverPS5_LoadCalibrationData(SDL_HIDAPI_Device *device)
+{
+    SDL_DriverPS5_Context *ctx = (SDL_DriverPS5_Context *)device->context;
+    int i, size;
+    Uint8 data[USB_PACKET_LENGTH];
+
+    size = ReadFeatureReport(device->dev, k_EPS5FeatureReportIdCalibration, data, sizeof(data));
+    if (size < 35) {
+#ifdef DEBUG_PS5_CALIBRATION
+        SDL_Log("Short read of calibration data: %d, ignoring calibration\n", size);
+#endif
+        return;
+    }
+
+    {
+        Sint16 sGyroPitchBias, sGyroYawBias, sGyroRollBias;
+        Sint16 sGyroPitchPlus, sGyroPitchMinus;
+        Sint16 sGyroYawPlus, sGyroYawMinus;
+        Sint16 sGyroRollPlus, sGyroRollMinus;
+        Sint16 sGyroSpeedPlus, sGyroSpeedMinus;
+
+        Sint16 sAccXPlus, sAccXMinus;
+        Sint16 sAccYPlus, sAccYMinus;
+        Sint16 sAccZPlus, sAccZMinus;
+
+        float flNumerator;
+        Sint16 sRange2g;
+
+#ifdef DEBUG_PS5_CALIBRATION
+        HIDAPI_DumpPacket("PS5 calibration packet: size = %d", data, size);
+#endif
+
+        sGyroPitchBias = LOAD16(data[1], data[2]);
+        sGyroYawBias = LOAD16(data[3], data[4]);
+        sGyroRollBias = LOAD16(data[5], data[6]);
+
+        sGyroPitchPlus = LOAD16(data[7], data[8]);
+        sGyroPitchMinus = LOAD16(data[9], data[10]);
+        sGyroYawPlus = LOAD16(data[11], data[12]);
+        sGyroYawMinus = LOAD16(data[13], data[14]);
+        sGyroRollPlus = LOAD16(data[15], data[16]);
+        sGyroRollMinus = LOAD16(data[17], data[18]);
+
+        sGyroSpeedPlus = LOAD16(data[19], data[20]);
+        sGyroSpeedMinus = LOAD16(data[21], data[22]);
+
+        sAccXPlus = LOAD16(data[23], data[24]);
+        sAccXMinus = LOAD16(data[25], data[26]);
+        sAccYPlus = LOAD16(data[27], data[28]);
+        sAccYMinus = LOAD16(data[29], data[30]);
+        sAccZPlus = LOAD16(data[31], data[32]);
+        sAccZMinus = LOAD16(data[33], data[34]);
+
+        flNumerator = (sGyroSpeedPlus + sGyroSpeedMinus) * GYRO_RES_PER_DEGREE;
+        ctx->calibration[0].bias = sGyroPitchBias;
+        ctx->calibration[0].sensitivity = flNumerator / (sGyroPitchPlus - sGyroPitchMinus);
+
+        ctx->calibration[1].bias = sGyroYawBias;
+        ctx->calibration[1].sensitivity = flNumerator / (sGyroYawPlus - sGyroYawMinus);
+
+        ctx->calibration[2].bias = sGyroRollBias;
+        ctx->calibration[2].sensitivity = flNumerator / (sGyroRollPlus - sGyroRollMinus);
+
+        sRange2g = sAccXPlus - sAccXMinus;
+        ctx->calibration[3].bias = sAccXPlus - sRange2g / 2;
+        ctx->calibration[3].sensitivity = 2.0f * ACCEL_RES_PER_G / (float)sRange2g;
+
+        sRange2g = sAccYPlus - sAccYMinus;
+        ctx->calibration[4].bias = sAccYPlus - sRange2g / 2;
+        ctx->calibration[4].sensitivity = 2.0f * ACCEL_RES_PER_G / (float)sRange2g;
+
+        sRange2g = sAccZPlus - sAccZMinus;
+        ctx->calibration[5].bias = sAccZPlus - sRange2g / 2;
+        ctx->calibration[5].sensitivity = 2.0f * ACCEL_RES_PER_G / (float)sRange2g;
+
+        ctx->hardware_calibration = SDL_TRUE;
+        for (i = 0; i < 6; ++i) {
+            float divisor = (i < 3 ? 64.0f : 1.0f);
+#ifdef DEBUG_PS5_CALIBRATION
+            SDL_Log("calibration[%d] bias = %d, sensitivity = %f\n", i, ctx->calibration[i].bias, ctx->calibration[i].sensitivity);
+#endif
+            /* Some controllers have a bad calibration */
+            if ((SDL_abs(ctx->calibration[i].bias) > 1024) || (SDL_fabs(1.0f - ctx->calibration[i].sensitivity / divisor) > 0.5f)) {
+#ifdef DEBUG_PS5_CALIBRATION
+                SDL_Log("invalid calibration, ignoring\n");
+#endif
+                ctx->hardware_calibration = SDL_FALSE;
+            }
+        }
+    }
+}
+
+static float
+HIDAPI_DriverPS5_ApplyCalibrationData(SDL_DriverPS5_Context *ctx, int index, Sint16 value)
+{
+    float result;
+
+    if (ctx->hardware_calibration) {
+        IMUCalibrationData *calibration = &ctx->calibration[index];
+
+        result = (value - calibration->bias) * calibration->sensitivity;
+    } else if (index < 3) {
+        result = value * 64.f;
+    } else {
+        result = value;
+    }
+
+    /* Convert the raw data to the units expected by SDL */
+    if (index < 3) {
+        result = (result / GYRO_RES_PER_DEGREE) * (float)M_PI / 180.0f;
+    } else {
+        result = (result / ACCEL_RES_PER_G) * SDL_STANDARD_GRAVITY;
+    }
+    return result;
+}
+
 static int
-HIDAPI_DriverPS5_UpdateEffects(SDL_HIDAPI_Device *device)
+HIDAPI_DriverPS5_UpdateEffects(SDL_HIDAPI_Device *device, EDS5Effect effect)
 {
     SDL_DriverPS5_Context *ctx = (SDL_DriverPS5_Context *)device->context;
     DS5EffectsState_t *effects;
     Uint8 data[78];
     int report_size, offset;
+    Uint8 *pending_data;
+    int *pending_size;
+    int maximum_size;
+
 
     SDL_zero(data);
 
@@ -210,22 +377,60 @@ HIDAPI_DriverPS5_UpdateEffects(SDL_HIDAPI_Device *device)
     }
     effects = (DS5EffectsState_t *)&data[offset];
 
-    effects->ucEnableBits1 |= 0x03; /* Enable left/right rumble */
-    effects->ucEnableBits2 |= 0x04; /* Enable LED color */
-    effects->ucEnableBits2 |= 0x10; /* Enable touchpad lights */
-
-    effects->ucRumbleLeft = ctx->rumble_left;
-    effects->ucRumbleRight = ctx->rumble_right;
-
-    /* Populate the LED state with the appropriate color from our lookup table */
-    if (ctx->color_set) {
-        effects->ucLedRed = ctx->led_red;
-        effects->ucLedGreen = ctx->led_green;
-        effects->ucLedBlue = ctx->led_blue;
-    } else {
-        SetLedsForPlayerIndex(effects, ctx->player_index);
+    /* Make sure the Bluetooth connection sequence has completed before sending LED color change */
+    if (effect == k_EDS5EffectLED && ctx->is_bluetooth) {
+        if (ctx->led_reset_state != k_EDS5LEDResetStateComplete) {
+            ctx->led_reset_state = k_EDS5LEDResetStatePending;
+            return 0;
+        }
     }
-    effects->ucPadLights = 0x00;    /* Bitmask, 0x1F enables all lights, 0x20 changes instantly instead of fade */
+
+    if (ctx->rumble_left || ctx->rumble_right) {
+        effects->ucEnableBits1 |= 0x01; /* Enable rumble emulation */
+        effects->ucEnableBits1 |= 0x02; /* Disable audio haptics */
+
+        /* Shift to reduce effective rumble strength to match Xbox controllers */
+        effects->ucRumbleLeft = ctx->rumble_left >> 1;
+        effects->ucRumbleRight = ctx->rumble_right >> 1;
+    } else {
+        /* Leaving emulated rumble bits off will restore audio haptics */
+    }
+
+    switch (effect) {
+    case k_EDS5EffectRumbleStart:
+        effects->ucEnableBits1 |= 0x02; /* Disable audio haptics */
+        break;
+    case k_EDS5EffectRumble:
+        /* Already handled above */
+        break;
+    case k_EDS5EffectLEDReset:
+        effects->ucEnableBits2 |= 0x08; /* Reset LED state */
+        break;
+    case k_EDS5EffectLED:
+        effects->ucEnableBits2 |= 0x04; /* Enable LED color */
+
+        /* Populate the LED state with the appropriate color from our lookup table */
+        if (ctx->color_set) {
+            effects->ucLedRed = ctx->led_red;
+            effects->ucLedGreen = ctx->led_green;
+            effects->ucLedBlue = ctx->led_blue;
+        } else {
+            SetLedsForPlayerIndex(effects, ctx->player_index);
+        }
+        break;
+    case k_EDS5EffectPadLights:
+        effects->ucEnableBits2 |= 0x10; /* Enable touchpad lights */
+
+        effects->ucPadLights = 0x00;    /* Bitmask, 0x1F enables all lights, 0x20 changes instantly instead of fade */
+        break;
+    case k_EDS5EffectMicLight:
+        effects->ucEnableBits2 |= 0x01; /* Enable microphone light */
+
+        effects->ucMicLightMode = 0;    /* Bitmask, 0x00 = off, 0x01 = solid, 0x02 = pulse */
+        break;
+    default:
+        break;
+    }
 
     if (ctx->is_bluetooth) {
         /* Bluetooth reports need a CRC at the end of the packet (at least on Linux) */
@@ -236,10 +441,24 @@ HIDAPI_DriverPS5_UpdateEffects(SDL_HIDAPI_Device *device)
         SDL_memcpy(&data[report_size - sizeof(unCRC)], &unCRC, sizeof(unCRC));
     }
 
-    if (SDL_HIDAPI_SendRumble(device, data, report_size) != report_size) {
-        return SDL_SetError("Couldn't send rumble packet");
+    if (SDL_HIDAPI_LockRumble() < 0) {
+        return -1;
     }
-    return 0;
+
+    /* See if we can update an existing pending request */
+    if (SDL_HIDAPI_GetPendingRumbleLocked(device, &pending_data, &pending_size, &maximum_size)) {
+        DS5EffectsState_t *pending_effects = (DS5EffectsState_t *)&pending_data[offset];
+        if (report_size == *pending_size &&
+            effects->ucEnableBits1 == pending_effects->ucEnableBits1 &&
+            effects->ucEnableBits2 == pending_effects->ucEnableBits2) {
+            /* We're simply updating the data for this request */
+            SDL_memcpy(pending_data, data, report_size);
+            SDL_HIDAPI_UnlockRumble();
+            return 0;
+        }
+    }
+
+    return SDL_HIDAPI_SendRumbleAndUnlock(device, data, report_size);
 }
 
 static void
@@ -249,7 +468,28 @@ HIDAPI_DriverPS5_SetBluetooth(SDL_HIDAPI_Device *device, SDL_bool is_bluetooth)
 
     if (ctx->is_bluetooth != is_bluetooth) {
         ctx->is_bluetooth = is_bluetooth;
-        HIDAPI_DriverPS5_UpdateEffects(device);
+        HIDAPI_DriverPS5_UpdateEffects(device, k_EDS5EffectLED);
+    }
+}
+
+static void
+HIDAPI_DriverPS5_CheckPendingLEDReset(SDL_HIDAPI_Device *device)
+{
+    SDL_DriverPS5_Context *ctx = (SDL_DriverPS5_Context *)device->context;
+    const PS5StatePacket_t *packet = &ctx->last_state.state;
+
+    /* Check the timer to make sure the Bluetooth connection LED animation is complete */
+    const Uint32 connection_complete = 10000000;
+    Uint32 timer = ((Uint32)packet->rgucTimer1[0] <<  0) |
+                   ((Uint32)packet->rgucTimer1[1] <<  8) |
+                   ((Uint32)packet->rgucTimer1[2] << 16) |
+                   ((Uint32)packet->rgucTimer1[3] << 24);
+    if (timer >= connection_complete) {
+        HIDAPI_DriverPS5_UpdateEffects(device, k_EDS5EffectLEDReset);
+
+        ctx->led_reset_state = k_EDS5LEDResetStateComplete;
+
+        HIDAPI_DriverPS5_UpdateEffects(device, k_EDS5EffectLED);
     }
 }
 
@@ -265,7 +505,7 @@ HIDAPI_DriverPS5_SetDevicePlayerIndex(SDL_HIDAPI_Device *device, SDL_JoystickID 
     ctx->player_index = player_index;
 
     /* This will set the new LED state based on the new player index */
-    HIDAPI_DriverPS5_UpdateEffects(device);
+    HIDAPI_DriverPS5_UpdateEffects(device, k_EDS5EffectLED);
 }
 
 static SDL_bool
@@ -279,6 +519,7 @@ HIDAPI_DriverPS5_OpenJoystick(SDL_HIDAPI_Device *device, SDL_Joystick *joystick)
         SDL_OutOfMemory();
         return SDL_FALSE;
     }
+    ctx->last_packet = SDL_GetTicks();
 
     device->dev = hid_open_path(device->path, 0);
     if (!device->dev) {
@@ -303,14 +544,15 @@ HIDAPI_DriverPS5_OpenJoystick(SDL_HIDAPI_Device *device, SDL_Joystick *joystick)
     ctx->player_index = SDL_JoystickGetPlayerIndex(joystick);
 
     /* Initialize LED and effect state */
-    HIDAPI_DriverPS5_UpdateEffects(device);
+    HIDAPI_DriverPS5_UpdateEffects(device, k_EDS5EffectLED);
 
     /* Initialize the joystick capabilities */
     joystick->nbuttons = 17;
     joystick->naxes = SDL_CONTROLLER_AXIS_MAX;
-    joystick->epowerlevel = SDL_JOYSTICK_POWER_WIRED;
 
     SDL_PrivateJoystickAddTouchpad(joystick, 2);
+    SDL_PrivateJoystickAddSensor(joystick, SDL_SENSOR_GYRO);
+    SDL_PrivateJoystickAddSensor(joystick, SDL_SENSOR_ACCEL);
 
     return SDL_TRUE;
 }
@@ -320,10 +562,14 @@ HIDAPI_DriverPS5_RumbleJoystick(SDL_HIDAPI_Device *device, SDL_Joystick *joystic
 {
     SDL_DriverPS5_Context *ctx = (SDL_DriverPS5_Context *)device->context;
 
+    if (!ctx->rumble_left && !ctx->rumble_right) {
+        HIDAPI_DriverPS5_UpdateEffects(device, k_EDS5EffectRumbleStart);
+    }
+
     ctx->rumble_left = (low_frequency_rumble >> 8);
     ctx->rumble_right = (high_frequency_rumble >> 8);
 
-    return HIDAPI_DriverPS5_UpdateEffects(device);
+    return HIDAPI_DriverPS5_UpdateEffects(device, k_EDS5EffectRumble);
 }
 
 static int
@@ -348,7 +594,20 @@ HIDAPI_DriverPS5_SetJoystickLED(SDL_HIDAPI_Device *device, SDL_Joystick *joystic
     ctx->led_green = green;
     ctx->led_blue = blue;
 
-    return HIDAPI_DriverPS5_UpdateEffects(device);
+    return HIDAPI_DriverPS5_UpdateEffects(device, k_EDS5EffectLED);
+}
+
+static int
+HIDAPI_DriverPS5_SetJoystickSensorsEnabled(SDL_HIDAPI_Device *device, SDL_Joystick *joystick, SDL_bool enabled)
+{
+    SDL_DriverPS5_Context *ctx = (SDL_DriverPS5_Context *)device->context;
+
+    if (enabled) {
+        HIDAPI_DriverPS5_LoadCalibrationData(device);
+    }
+    ctx->report_sensors = enabled;
+
+    return 0;
 }
 
 static void
@@ -543,18 +802,18 @@ HIDAPI_DriverPS5_HandleStatePacket(SDL_Joystick *joystick, hid_device *dev, SDL_
 
     if (packet->ucBatteryLevel & 0x10) {
         /* 0x20 set means fully charged */
-        joystick->epowerlevel = SDL_JOYSTICK_POWER_WIRED;
+        SDL_PrivateJoystickBatteryLevel(joystick, SDL_JOYSTICK_POWER_WIRED);
     } else {
         /* Battery level ranges from 0 to 10 */
         int level = (packet->ucBatteryLevel & 0xF);
         if (level == 0) {
-            joystick->epowerlevel = SDL_JOYSTICK_POWER_EMPTY;
+            SDL_PrivateJoystickBatteryLevel(joystick, SDL_JOYSTICK_POWER_EMPTY);
         } else if (level <= 2) {
-            joystick->epowerlevel = SDL_JOYSTICK_POWER_LOW;
+            SDL_PrivateJoystickBatteryLevel(joystick, SDL_JOYSTICK_POWER_LOW);
         } else if (level <= 7) {
-            joystick->epowerlevel = SDL_JOYSTICK_POWER_MEDIUM;
+            SDL_PrivateJoystickBatteryLevel(joystick, SDL_JOYSTICK_POWER_MEDIUM);
         } else {
-            joystick->epowerlevel = SDL_JOYSTICK_POWER_FULL;
+            SDL_PrivateJoystickBatteryLevel(joystick, SDL_JOYSTICK_POWER_FULL);
         }
     }
 
@@ -568,6 +827,20 @@ HIDAPI_DriverPS5_HandleStatePacket(SDL_Joystick *joystick, hid_device *dev, SDL_
     touchpad_y = (packet->rgucTouchpadData2[1] >> 4) | ((int)packet->rgucTouchpadData2[2] << 4);
     SDL_PrivateJoystickTouchpad(joystick, 0, 1, touchpad_state, touchpad_x * TOUCHPAD_SCALEX, touchpad_y * TOUCHPAD_SCALEY, touchpad_state ? 1.0f : 0.0f);
 
+    if (ctx->report_sensors) {
+        float data[3];
+
+        data[0] = HIDAPI_DriverPS5_ApplyCalibrationData(ctx, 0, LOAD16(packet->rgucGyroX[0], packet->rgucGyroX[1]));
+        data[1] = HIDAPI_DriverPS5_ApplyCalibrationData(ctx, 1, LOAD16(packet->rgucGyroY[0], packet->rgucGyroY[1]));
+        data[2] = HIDAPI_DriverPS5_ApplyCalibrationData(ctx, 2, LOAD16(packet->rgucGyroZ[0], packet->rgucGyroZ[1]));
+        SDL_PrivateJoystickSensor(joystick, SDL_SENSOR_GYRO, data, 3);
+
+        data[0] = HIDAPI_DriverPS5_ApplyCalibrationData(ctx, 3, LOAD16(packet->rgucAccelX[0], packet->rgucAccelX[1]));
+        data[1] = HIDAPI_DriverPS5_ApplyCalibrationData(ctx, 4, LOAD16(packet->rgucAccelY[0], packet->rgucAccelY[1]));
+        data[2] = HIDAPI_DriverPS5_ApplyCalibrationData(ctx, 5, LOAD16(packet->rgucAccelZ[0], packet->rgucAccelZ[1]));
+        SDL_PrivateJoystickSensor(joystick, SDL_SENSOR_ACCEL, data, 3);
+    }
+
     SDL_memcpy(&ctx->last_state.state, packet, sizeof(ctx->last_state.state));
 }
 
@@ -578,6 +851,7 @@ HIDAPI_DriverPS5_UpdateDevice(SDL_HIDAPI_Device *device)
     SDL_Joystick *joystick = NULL;
     Uint8 data[USB_PACKET_LENGTH*2];
     int size;
+    int packet_count = 0;
 
     if (device->num_joysticks > 0) {
         joystick = SDL_JoystickFromInstanceID(device->joysticks[0]);
@@ -590,6 +864,9 @@ HIDAPI_DriverPS5_UpdateDevice(SDL_HIDAPI_Device *device)
 #ifdef DEBUG_PS5_PROTOCOL
         HIDAPI_DumpPacket("PS5 packet: size = %d", data, size);
 #endif
+        ++packet_count;
+        ctx->last_packet = SDL_GetTicks();
+
         switch (data[0]) {
         case k_EPS5ReportIdState:
             if (size == 10) {
@@ -603,6 +880,9 @@ HIDAPI_DriverPS5_UpdateDevice(SDL_HIDAPI_Device *device)
         case k_EPS5ReportIdBluetoothState:
             HIDAPI_DriverPS5_SetBluetooth(device, SDL_TRUE);
             HIDAPI_DriverPS5_HandleStatePacket(joystick, device->dev, ctx, (PS5StatePacket_t *)&data[2]);
+            if (ctx->led_reset_state == k_EDS5LEDResetStatePending) {
+                HIDAPI_DriverPS5_CheckPendingLEDReset(device);
+            }
             break;
         default:
 #ifdef DEBUG_JOYSTICK
@@ -612,9 +892,17 @@ HIDAPI_DriverPS5_UpdateDevice(SDL_HIDAPI_Device *device)
         }
     }
 
+    if (ctx->is_bluetooth && packet_count == 0) {
+        /* Check to see if it looks like the device disconnected */
+        if (SDL_TICKS_PASSED(SDL_GetTicks(), ctx->last_packet + BLUETOOTH_DISCONNECT_TIMEOUT_MS)) {
+            /* Send an empty output report to tickle the Bluetooth stack */
+            HIDAPI_DriverPS5_UpdateEffects(device, k_EDS5EffectNone);
+        }
+    }
+
     if (size < 0) {
         /* Read error, device is disconnected */
-        HIDAPI_JoystickDisconnected(device, joystick->instance_id, SDL_FALSE);
+        HIDAPI_JoystickDisconnected(device, joystick->instance_id);
     }
     return (size >= 0);
 }
@@ -649,9 +937,9 @@ SDL_HIDAPI_DeviceDriver SDL_HIDAPI_DriverPS5 =
     HIDAPI_DriverPS5_RumbleJoystickTriggers,
     HIDAPI_DriverPS5_HasJoystickLED,
     HIDAPI_DriverPS5_SetJoystickLED,
+    HIDAPI_DriverPS5_SetJoystickSensorsEnabled,
     HIDAPI_DriverPS5_CloseJoystick,
     HIDAPI_DriverPS5_FreeDevice,
-    NULL
 };
 
 #endif /* SDL_JOYSTICK_HIDAPI_PS5 */
