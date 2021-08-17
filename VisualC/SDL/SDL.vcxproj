@@ -219,7 +219,8 @@
       <EnableCOMDATFolding>true</EnableCOMDATFolding>
     </Link>
     <PostBuildEvent>
-      <Command>copy $(SolutionDir)bin\FNA\$(ProjectName)$(TargetExt) $(SolutionDir)..\..\bin\Windows_64</Command>
+      <Command>
+      </Command>
     </PostBuildEvent>
   </ItemDefinitionGroup>
   <ItemGroup>
