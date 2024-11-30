@@ -50,6 +50,9 @@ static const CameraBootStrap *const bootstrap[] = {
 #ifdef SDL_CAMERA_DRIVER_MEDIAFOUNDATION
     &MEDIAFOUNDATION_bootstrap,
 #endif
+#ifdef SDL_CAMERA_DRIVER_VITA
+    &VITACAMERA_bootstrap,
+#endif
 #ifdef SDL_CAMERA_DRIVER_DUMMY
     &DUMMYCAMERA_bootstrap,
 #endif
@@ -785,7 +788,7 @@ void SDL_CameraThreadSetup(SDL_Camera *device)
     }*/
 #else
     // The camera capture is always a high priority thread
-    SDL_SetThreadPriority(SDL_THREAD_PRIORITY_HIGH);
+    SDL_SetCurrentThreadPriority(SDL_THREAD_PRIORITY_HIGH);
 #endif
 }
 

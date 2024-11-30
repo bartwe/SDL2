@@ -79,7 +79,7 @@ char *SDL_UCS4ToUTF8(Uint32 codepoint, char *dst)
 
 
 // this expects `from` and `to` to be UTF-32 encoding!
-int SDL_CaseFoldUnicode(const Uint32 from, Uint32 *to)
+int SDL_CaseFoldUnicode(Uint32 from, Uint32 *to)
 {
     // !!! FIXME: since the hashtable is static, maybe we should binary
     // !!! FIXME: search it instead of walking the whole bucket.
@@ -263,6 +263,26 @@ Uint32 SDL_StepUTF8(const char **pstr, size_t *pslen)
     const Uint32 result = StepUTF8(pstr, *pslen);
     *pslen -= (size_t) (*pstr - origstr);
     return result;
+}
+
+Uint32 SDL_StepBackUTF8(const char *start, const char **pstr)
+{
+    if (!pstr || *pstr <= start) {
+        return 0;
+    }
+
+    // Step back over the previous UTF-8 character
+    const char *str = *pstr;
+    do {
+        if (str == start) {
+            break;
+        }
+        --str;
+    } while ((*str & 0xC0) == 0x80);
+
+    size_t length = (*pstr - str);
+    *pstr = str;
+    return StepUTF8(&str, length);
 }
 
 #if (SDL_SIZEOF_WCHAR_T == 2)

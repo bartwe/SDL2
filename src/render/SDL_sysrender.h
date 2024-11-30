@@ -305,6 +305,8 @@ struct SDL_Renderer
 
     SDL_PropertiesID props;
 
+    SDL_Texture *debug_char_texture_atlas;
+
     bool destroyed;   // already destroyed by SDL_DestroyWindow; just free this struct in SDL_DestroyRenderer.
 
     void *internal;
@@ -359,7 +361,7 @@ extern SDL_BlendOperation SDL_GetBlendModeAlphaOperation(SDL_BlendMode blendMode
 /* drivers call this during their Queue*() methods to make space in a array that are used
    for a vertex buffer during RunCommandQueue(). Pointers returned here are only valid until
    the next call, because it might be in an array that gets realloc()'d. */
-extern void *SDL_AllocateRenderVertices(SDL_Renderer *renderer, const size_t numbytes, const size_t alignment, size_t *offset);
+extern void *SDL_AllocateRenderVertices(SDL_Renderer *renderer, size_t numbytes, size_t alignment, size_t *offset);
 
 // Let the video subsystem destroy a renderer without making its pointer invalid.
 extern void SDL_DestroyRendererWithoutFreeing(SDL_Renderer *renderer);

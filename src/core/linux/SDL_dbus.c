@@ -20,7 +20,6 @@
 */
 #include "SDL_internal.h"
 #include "SDL_dbus.h"
-#include "SDL_sandbox.h"
 #include "../../stdlib/SDL_vacopy.h"
 
 #ifdef SDL_USE_LIBDBUS
@@ -341,7 +340,7 @@ bool SDL_DBus_CallVoidMethod(const char *node, const char *path, const char *int
     return result;
 }
 
-bool SDL_DBus_QueryPropertyOnConnection(DBusConnection *conn, const char *node, const char *path, const char *interface, const char *property, const int expectedtype, void *result)
+bool SDL_DBus_QueryPropertyOnConnection(DBusConnection *conn, const char *node, const char *path, const char *interface, const char *property, int expectedtype, void *result)
 {
     bool retval = false;
 
@@ -358,7 +357,7 @@ bool SDL_DBus_QueryPropertyOnConnection(DBusConnection *conn, const char *node, 
     return retval;
 }
 
-bool SDL_DBus_QueryProperty(const char *node, const char *path, const char *interface, const char *property, const int expectedtype, void *result)
+bool SDL_DBus_QueryProperty(const char *node, const char *path, const char *interface, const char *property, int expectedtype, void *result)
 {
     return SDL_DBus_QueryPropertyOnConnection(dbus.session_conn, node, path, interface, property, expectedtype, result);
 }
@@ -443,7 +442,7 @@ bool SDL_DBus_ScreensaverInhibit(bool inhibit)
         return false;
     }
 
-    if (SDL_DetectSandbox() != SDL_SANDBOX_NONE) {
+    if (SDL_GetSandbox() != SDL_SANDBOX_NONE) {
         const char *bus_name = "org.freedesktop.portal.Desktop";
         const char *path = "/org/freedesktop/portal/desktop";
         const char *interface = "org.freedesktop.portal.Inhibit";

@@ -220,10 +220,10 @@ static void WIN_CheckWParamMouseButton(Uint64 timestamp, bool bwParamMousePresse
         }
     }
 
-    if (data->focus_click_pending & SDL_BUTTON(button)) {
+    if (data->focus_click_pending & SDL_BUTTON_MASK(button)) {
         // Ignore the button click for activation
         if (!bwParamMousePressed) {
-            data->focus_click_pending &= ~SDL_BUTTON(button);
+            data->focus_click_pending &= ~SDL_BUTTON_MASK(button);
             WIN_UpdateClipCursor(data->window);
         }
         if (WIN_ShouldIgnoreFocusClick(data)) {
@@ -231,9 +231,9 @@ static void WIN_CheckWParamMouseButton(Uint64 timestamp, bool bwParamMousePresse
         }
     }
 
-    if (bwParamMousePressed && !(mouseFlags & SDL_BUTTON(button))) {
+    if (bwParamMousePressed && !(mouseFlags & SDL_BUTTON_MASK(button))) {
         SDL_SendMouseButton(timestamp, data->window, mouseID, button, true);
-    } else if (!bwParamMousePressed && (mouseFlags & SDL_BUTTON(button))) {
+    } else if (!bwParamMousePressed && (mouseFlags & SDL_BUTTON_MASK(button))) {
         SDL_SendMouseButton(timestamp, data->window, mouseID, button, false);
     }
 }
@@ -308,21 +308,23 @@ static void WIN_UpdateFocus(SDL_Window *window, bool expect_focus)
     if (has_focus) {
         POINT cursorPos;
 
-        bool swapButtons = GetSystemMetrics(SM_SWAPBUTTON) != 0;
-        if (GetAsyncKeyState(VK_LBUTTON)) {
-            data->focus_click_pending |= !swapButtons ? SDL_BUTTON_LMASK : SDL_BUTTON_RMASK;
-        }
-        if (GetAsyncKeyState(VK_RBUTTON)) {
-            data->focus_click_pending |= !swapButtons ? SDL_BUTTON_RMASK : SDL_BUTTON_LMASK;
-        }
-        if (GetAsyncKeyState(VK_MBUTTON)) {
-            data->focus_click_pending |= SDL_BUTTON_MMASK;
-        }
-        if (GetAsyncKeyState(VK_XBUTTON1)) {
-            data->focus_click_pending |= SDL_BUTTON_X1MASK;
-        }
-        if (GetAsyncKeyState(VK_XBUTTON2)) {
-            data->focus_click_pending |= SDL_BUTTON_X2MASK;
+        if (!(window->flags & SDL_WINDOW_MOUSE_CAPTURE)) {
+            bool swapButtons = GetSystemMetrics(SM_SWAPBUTTON) != 0;
+            if (GetAsyncKeyState(VK_LBUTTON)) {
+                data->focus_click_pending |= !swapButtons ? SDL_BUTTON_LMASK : SDL_BUTTON_RMASK;
+            }
+            if (GetAsyncKeyState(VK_RBUTTON)) {
+                data->focus_click_pending |= !swapButtons ? SDL_BUTTON_RMASK : SDL_BUTTON_LMASK;
+            }
+            if (GetAsyncKeyState(VK_MBUTTON)) {
+                data->focus_click_pending |= SDL_BUTTON_MMASK;
+            }
+            if (GetAsyncKeyState(VK_XBUTTON1)) {
+                data->focus_click_pending |= SDL_BUTTON_X1MASK;
+            }
+            if (GetAsyncKeyState(VK_XBUTTON2)) {
+                data->focus_click_pending |= SDL_BUTTON_X2MASK;
+            }
         }
 
         SDL_SetKeyboardFocus(data->keyboard_focus ? data->keyboard_focus : window);
@@ -651,10 +653,10 @@ static void WIN_HandleRawMouseInput(Uint64 timestamp, SDL_VideoData *data, HANDL
                     }
                 }
 
-                if (windowdata->focus_click_pending & SDL_BUTTON(button)) {
+                if (windowdata->focus_click_pending & SDL_BUTTON_MASK(button)) {
                     // Ignore the button click for activation
                     if (!down) {
-                        windowdata->focus_click_pending &= ~SDL_BUTTON(button);
+                        windowdata->focus_click_pending &= ~SDL_BUTTON_MASK(button);
                         WIN_UpdateClipCursor(window);
                     }
                     if (WIN_ShouldIgnoreFocusClick(windowdata)) {
@@ -706,7 +708,7 @@ static void WIN_HandleRawKeyboardInput(Uint64 timestamp, SDL_VideoData *data, HA
         return;
     }
 
-    bool down = ((rawkeyboard->Flags & RI_KEY_BREAK) != 0);
+    bool down = !(rawkeyboard->Flags & RI_KEY_BREAK);
     SDL_Scancode code;
     USHORT rawcode = rawkeyboard->MakeCode;
     if (data->pending_E1_key_sequence) {
@@ -1779,7 +1781,7 @@ LRESULT CALLBACK WIN_WindowProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lPara
             UINT i, num_inputs = LOWORD(wParam);
             bool isstack;
             PTOUCHINPUT inputs = SDL_small_alloc(TOUCHINPUT, num_inputs, &isstack);
-            if (data->videodata->GetTouchInputInfo((HTOUCHINPUT)lParam, num_inputs, inputs, sizeof(TOUCHINPUT))) {
+            if (inputs && data->videodata->GetTouchInputInfo((HTOUCHINPUT)lParam, num_inputs, inputs, sizeof(TOUCHINPUT))) {
                 RECT rect;
                 float x, y;
 

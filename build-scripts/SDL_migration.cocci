@@ -65,7 +65,7 @@ SDL_OpenAudioDevice(...)
 expression e;
 @@
 - SDL_PauseAudio(e)
-+ e == SDL_TRUE ? SDL_PauseAudioDevice(g_audio_id) : SDL_PlayAudioDevice(g_audio_id)
++ e ? SDL_PauseAudioDevice(g_audio_id) : SDL_PlayAudioDevice(g_audio_id)
 
 @@
 @@
@@ -92,13 +92,13 @@ expression e1;
 @@
 (
 - SDL_EventState(e1, SDL_IGNORE)
-+ SDL_SetEventEnabled(e1, SDL_FALSE)
++ SDL_SetEventEnabled(e1, false)
 |
 - SDL_EventState(e1, SDL_DISABLE)
-+ SDL_SetEventEnabled(e1, SDL_FALSE)
++ SDL_SetEventEnabled(e1, false)
 |
 - SDL_EventState(e1, SDL_ENABLE)
-+ SDL_SetEventEnabled(e1, SDL_TRUE)
++ SDL_SetEventEnabled(e1, true)
 |
 - SDL_EventState(e1, SDL_QUERY)
 + SDL_EventEnabled(e1)
@@ -173,6 +173,12 @@ expression e;
 @@
 + /* FIXME MIGRATION: SDL_Has3DNow() has been removed; there is no replacement. */ 0
 - SDL_Has3DNow()
+
+// SDL_HasRDTSC() has been removed; there is no replacement.
+@@
+@@
++ /* FIXME MIGRATION: SDL_HasRDTSC() has been removed; there is no replacement. */ 0
+- SDL_HasRDTSC()
 
 // SDL_HINT_VIDEO_X11_XINERAMA (Xinerama no longer supported by the X11 backend)
 @@
@@ -887,11 +893,11 @@ typedef SDL_ControllerTouchpadEvent, SDL_GamepadTouchpadEvent;
 @@
 @@
 - SDL_CONTROLLER_BUTTON_A
-+ SDL_GAMEPAD_BUTTON_A
++ SDL_GAMEPAD_BUTTON_SOUTH
 @@
 @@
 - SDL_CONTROLLER_BUTTON_B
-+ SDL_GAMEPAD_BUTTON_B
++ SDL_GAMEPAD_BUTTON_EAST
 @@
 @@
 - SDL_CONTROLLER_BUTTON_BACK
@@ -971,11 +977,11 @@ typedef SDL_ControllerTouchpadEvent, SDL_GamepadTouchpadEvent;
 @@
 @@
 - SDL_CONTROLLER_BUTTON_X
-+ SDL_GAMEPAD_BUTTON_X
++ SDL_GAMEPAD_BUTTON_WEST
 @@
 @@
 - SDL_CONTROLLER_BUTTON_Y
-+ SDL_GAMEPAD_BUTTON_Y
++ SDL_GAMEPAD_BUTTON_NORTH
 @@
 @@
 - SDL_CONTROLLER_TYPE_AMAZON_LUNA
@@ -2056,7 +2062,7 @@ expression e;
 @@
 @@
 - SDL_WINDOWEVENT_TAKE_FOCUS
-+ SDL_EVENT_WINDOW_TAKE_FOCUS
++ /* FIXME MIGRATION: SDL_WINDOWEVENT_TAKE_FOCUS has been removed; there is no replacement. */ 0
 @@
 @@
 - SDL_WINDOWEVENT_HIT_TEST
@@ -2471,11 +2477,6 @@ expression e1, e2, e3, e4;
 @@
 - SDL_CreateWindow(e1, SDL_WINDOWPOS_UNDEFINED, SDL_WINDOWPOS_UNDEFINED, e2, e3, e4)
 + SDL_CreateWindow(e1, e2, e3, e4)
-@@
-expression e1, e2, e3, e4, e5, e6;
-@@
-- SDL_CreateWindow(e1, e2, e3, e4, e5, e6)
-+ SDL_CreateWindowWithPosition(e1, e2, e3, e4, e5, e6)
 @@
 expression e1, e2, e3, e4;
 constant c1, c2;
@@ -3632,11 +3633,11 @@ typedef SDL_JoystickGUID, SDL_GUID;
 @@
 @@
 - SDL_PRESSED
-+ SDL_TRUE
++ true
 @@
 @@
 - SDL_RELEASED
-+ SDL_FALSE
++ false
 
 // This should be the last rule in the file, since it works on SDL3 functions and previous rules may have renamed old functions.
 @ bool_return_type  @
@@ -3688,6 +3689,7 @@ identifier func =~ "^(SDL_AddEventWatch|SDL_AddHintCallback|SDL_AddSurfaceAltern
 + SDL_GetNumLogicalCPUCores
   (...)
 @@
+typedef SDL_bool, bool;
 @@
 - SDL_bool
 + bool
@@ -3704,3 +3706,28 @@ identifier func =~ "^(SDL_AddEventWatch|SDL_AddHintCallback|SDL_AddSurfaceAltern
 - SDL_IsAndroidTV
 + SDL_IsTV
   (...)
+@@
+@@
+- SDL_SetThreadPriority
++ SDL_SetCurrentThreadPriority
+  (...)
+@@
+@@
+- SDL_BUTTON
++ SDL_BUTTON_MASK
+@@
+@@
+- SDL_GLprofile
++ SDL_GLProfile
+@@
+@@
+- SDL_GLcontextFlag
++ SDL_GLContextFlag
+@@
+@@
+- SDL_GLcontextReleaseFlag
++ SDL_GLContextReleaseFlag
+@@
+@@
+- SDL_GLattr
++ SDL_GLAttr

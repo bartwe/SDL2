@@ -1786,6 +1786,9 @@ static bool SDL_FlipSurfaceHorizontal(SDL_Surface *surface)
     bpp = SDL_BYTESPERPIXEL(surface->format);
     row = (Uint8 *)surface->pixels;
     tmp = SDL_small_alloc(Uint8, surface->pitch, &isstack);
+    if (!tmp) {
+        return false;
+    }
     for (i = surface->h; i--; ) {
         a = row;
         b = a + (surface->w - 1) * bpp;
@@ -1815,6 +1818,9 @@ static bool SDL_FlipSurfaceVertical(SDL_Surface *surface)
     a = (Uint8 *)surface->pixels;
     b = a + (surface->h - 1) * surface->pitch;
     tmp = SDL_small_alloc(Uint8, surface->pitch, &isstack);
+    if (!tmp) {
+        return false;
+    }
     for (i = surface->h / 2; i--; ) {
         SDL_memcpy(tmp, a, surface->pitch);
         SDL_memcpy(a, b, surface->pitch);
@@ -2591,6 +2597,7 @@ bool SDL_ClearSurface(SDL_Surface *surface, float r, float g, float b, float a)
             goto done;
         }
         SDL_SetSurfaceColorspace(tmp, surface->colorspace);
+        SDL_SetSurfaceBlendMode(tmp, SDL_BLENDMODE_NONE);
 
         float *pixels = (float *)tmp->pixels;
         pixels[0] = r;

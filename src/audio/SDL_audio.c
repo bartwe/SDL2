@@ -26,6 +26,9 @@
 
 // Available audio drivers
 static const AudioBootStrap *const bootstrap[] = {
+#ifdef SDL_AUDIO_DRIVER_PRIVATE
+    &PRIVATEAUDIO_bootstrap,
+#endif
 #ifdef SDL_AUDIO_DRIVER_PULSEAUDIO
 #ifdef SDL_AUDIO_DRIVER_PIPEWIRE
     &PIPEWIRE_PREFERRED_bootstrap,
@@ -341,6 +344,16 @@ static SDL_AudioDeviceID AssignAudioDeviceInstanceId(bool recording, bool islogi
     const SDL_AudioDeviceID instance_id = (((SDL_AudioDeviceID) (SDL_AtomicIncRef(&last_device_instance_id) + 1)) << 2) | flags;
     SDL_assert( (instance_id >= 2) && (instance_id < SDL_AUDIO_DEVICE_DEFAULT_RECORDING) );
     return instance_id;
+}
+
+bool SDL_IsAudioDevicePhysical(SDL_AudioDeviceID devid)
+{
+    return (devid & (1 << 1)) != 0;
+}
+
+bool SDL_IsAudioDevicePlayback(SDL_AudioDeviceID devid)
+{
+    return (devid & (1 << 0)) != 0;
 }
 
 static void ObtainPhysicalAudioDeviceObj(SDL_AudioDevice *device) SDL_NO_THREAD_SAFETY_ANALYSIS  // !!! FIXMEL SDL_ACQUIRE
@@ -781,7 +794,7 @@ static void SDL_AudioFreeDeviceHandle_Default(SDL_AudioDevice *device) { /* no-o
 
 static void SDL_AudioThreadInit_Default(SDL_AudioDevice *device)
 {
-    SDL_SetThreadPriority(device->recording ? SDL_THREAD_PRIORITY_HIGH : SDL_THREAD_PRIORITY_TIME_CRITICAL);
+    SDL_SetCurrentThreadPriority(device->recording ? SDL_THREAD_PRIORITY_HIGH : SDL_THREAD_PRIORITY_TIME_CRITICAL);
 }
 
 static void SDL_AudioDetectDevices_Default(SDL_AudioDevice **default_playback, SDL_AudioDevice **default_recording)

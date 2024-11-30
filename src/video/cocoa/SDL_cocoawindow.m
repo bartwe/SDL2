@@ -88,6 +88,7 @@
 
 // Handle drag-and-drop of files onto the SDL window.
 - (NSDragOperation)draggingEntered:(id<NSDraggingInfo>)sender;
+- (void)draggingExited:(id<NSDraggingInfo>)sender;
 - (NSDragOperation)draggingUpdated:(id<NSDraggingInfo>)sender;
 - (BOOL)performDragOperation:(id<NSDraggingInfo>)sender;
 - (BOOL)wantsPeriodicDraggingUpdates;
@@ -174,6 +175,12 @@
     return NSDragOperationNone; // no idea what to do with this, reject it.
 }
 
+- (void)draggingExited:(id<NSDraggingInfo>)sender
+{
+    SDL_Window *sdlwindow = [self findSDLWindow];
+    SDL_SendDropComplete(sdlwindow);
+}
+
 - (NSDragOperation)draggingUpdated:(id<NSDraggingInfo>)sender
 {
     if (([sender draggingSourceOperationMask] & NSDragOperationGeneric) == NSDragOperationGeneric) {
@@ -199,7 +206,7 @@
 
 - (BOOL)performDragOperation:(id<NSDraggingInfo>)sender
 {
-    SDL_LogDebug(SDL_LOG_CATEGORY_INPUT,
+    SDL_LogTrace(SDL_LOG_CATEGORY_INPUT,
                  ". [SDL] In performDragOperation, draggingSourceOperationMask %lx, "
                  "expected Generic %lx, others Copy %lx, Link %lx, Private %lx, Move %lx, Delete %lx\n",
                  (unsigned long)[sender draggingSourceOperationMask],
@@ -210,7 +217,7 @@
                  (unsigned long)NSDragOperationMove,
                  (unsigned long)NSDragOperationDelete);
     if ([sender draggingPasteboard]) {
-        SDL_LogDebug(SDL_LOG_CATEGORY_INPUT,
+        SDL_LogTrace(SDL_LOG_CATEGORY_INPUT,
                      ". [SDL] In performDragOperation, valid draggingPasteboard, "
                      "name [%s] '%s', changeCount %ld\n",
                      [[[[sender draggingPasteboard] name] className] UTF8String],
@@ -229,7 +236,7 @@
 
         for (NSString *supportedType in [pasteboard types]) {
             NSString *typeString = [pasteboard stringForType:supportedType];
-            SDL_LogDebug(SDL_LOG_CATEGORY_INPUT,
+            SDL_LogTrace(SDL_LOG_CATEGORY_INPUT,
                          ". [SDL] In performDragOperation, Pasteboard type '%s', stringForType (%lu) '%s'\n",
                          [[supportedType description] UTF8String],
                          (unsigned long)[[typeString description] length],
@@ -281,7 +288,7 @@
                         }
                     }
                 }
-                SDL_LogDebug(SDL_LOG_CATEGORY_INPUT,
+                SDL_LogTrace(SDL_LOG_CATEGORY_INPUT,
                              ". [SDL] In performDragOperation, desiredType '%s', "
                              "Submitting DropFile as (%lu) '%s'\n",
                              [[desiredType description] UTF8String],
@@ -296,7 +303,7 @@
             char *saveptr = NULL;
             char *token   = SDL_strtok_r(buffer, "\r\n", &saveptr);
             while (token) {
-                SDL_LogDebug(SDL_LOG_CATEGORY_INPUT,
+                SDL_LogTrace(SDL_LOG_CATEGORY_INPUT,
                              ". [SDL] In performDragOperation, desiredType '%s', "
                              "Submitting DropText as (%lu) '%s'\n",
                              [[desiredType description] UTF8String],
@@ -1195,6 +1202,14 @@ static NSCursor *Cocoa_GetDesiredCursor(void)
         const unsigned int newflags = [NSEvent modifierFlags] & NSEventModifierFlagCapsLock;
         _data.videodata.modifierFlags = (_data.videodata.modifierFlags & ~NSEventModifierFlagCapsLock) | newflags;
         SDL_ToggleModState(SDL_KMOD_CAPS, newflags ? true : false);
+    }
+
+    /* Restore fullscreen mode unless the window is deminiaturizing.
+     * If it is, fullscreen will be restored when deminiaturization is complete.
+     */
+    if (!(window->flags & SDL_WINDOW_MINIMIZED) &&
+        [self windowOperationIsPending:PENDING_OPERATION_ENTER_FULLSCREEN]) {
+        SDL_UpdateFullscreenMode(window, true, true);
     }
 }
 
@@ -2622,8 +2637,8 @@ void Cocoa_RestoreWindow(SDL_VideoDevice *_this, SDL_Window *window)
         SDL_CocoaWindowData *data = (__bridge SDL_CocoaWindowData *)window->internal;
         NSWindow *nswindow = data.nswindow;
 
-        if ([data.listener windowOperationIsPending:(PENDING_OPERATION_ENTER_FULLSCREEN | PENDING_OPERATION_LEAVE_FULLSCREEN)] ||
-            [data.listener isInFullscreenSpaceTransition]) {
+        if (([data.listener windowOperationIsPending:(PENDING_OPERATION_ENTER_FULLSCREEN | PENDING_OPERATION_LEAVE_FULLSCREEN)] &&
+            ![data.nswindow isMiniaturized]) || [data.listener isInFullscreenSpaceTransition]) {
             Cocoa_SyncWindow(_this, window);
         }
 
@@ -2726,6 +2741,9 @@ SDL_FullscreenResult Cocoa_SetWindowFullscreen(SDL_VideoDevice *_this, SDL_Windo
         NSWindow *nswindow = data.nswindow;
         NSRect rect;
 
+        // This is a synchronous operation, so always clear the pending flags.
+        [data.listener clearPendingWindowOperation:PENDING_OPERATION_ENTER_FULLSCREEN | PENDING_OPERATION_LEAVE_FULLSCREEN];
+
         // The view responder chain gets messed with during setStyleMask
         if ([data.sdlContentView nextResponder] == data.listener) {
             [data.sdlContentView setNextResponder:nil];
@@ -2794,14 +2812,7 @@ SDL_FullscreenResult Cocoa_SetWindowFullscreen(SDL_VideoDevice *_this, SDL_Windo
         // When the window style changes the title is cleared
         if (!fullscreen) {
             Cocoa_SetWindowTitle(_this, window);
-
             data.was_zoomed = NO;
-
-            if ([data.listener windowOperationIsPending:PENDING_OPERATION_MINIMIZE]) {
-                Cocoa_WaitForMiniaturizable(window);
-                [data.listener addPendingWindowOperation:PENDING_OPERATION_ENTER_FULLSCREEN];
-                [nswindow miniaturize:nil];
-            }
         }
 
         if (SDL_ShouldAllowTopmost() && fullscreen) {
@@ -2833,6 +2844,16 @@ SDL_FullscreenResult Cocoa_SetWindowFullscreen(SDL_VideoDevice *_this, SDL_Windo
             } else {
                 SDL_SetWindowSafeAreaInsets(data.window, 0, 0, 0, 0);
             }
+        }
+
+        /* When coming out of fullscreen to minimize, this needs to happen after the window
+         * is made key again, or it won't minimize on 15.0 (Sequoia).
+         */
+        if (!fullscreen && [data.listener windowOperationIsPending:PENDING_OPERATION_MINIMIZE]) {
+            Cocoa_WaitForMiniaturizable(window);
+            [data.listener addPendingWindowOperation:PENDING_OPERATION_ENTER_FULLSCREEN];
+            [data.listener clearPendingWindowOperation:PENDING_OPERATION_MINIMIZE];
+            [nswindow miniaturize:nil];
         }
 
         ScheduleContextUpdates(data);

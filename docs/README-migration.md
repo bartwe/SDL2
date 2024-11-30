@@ -798,7 +798,7 @@ The following functions have been removed:
 
 Calling SDL_GetHint() with the name of the hint being changed from within a hint callback will now return the new value rather than the old value. The old value is still passed as a parameter to the hint callback.
 
-The environment variables SDL_VIDEODRIVER and SDL_AUDIODRIVER have been renamed to SDL_VIDEO_DRIVER and SDL_AUDIO_DRIVER.
+The environment variables SDL_VIDEODRIVER and SDL_AUDIODRIVER have been renamed to SDL_VIDEO_DRIVER and SDL_AUDIO_DRIVER, but the old names are still supported as a fallback.
 
 The environment variables SDL_VIDEO_X11_WMCLASS and SDL_VIDEO_WAYLAND_WMCLASS have been removed and replaced by either using the appindentifier param to SDL_SetAppMetadata() or setting SDL_PROP_APP_METADATA_IDENTIFIER_STRING with SDL_SetAppMetadataProperty()
 
@@ -998,7 +998,9 @@ The following functions have been removed:
 * SDL_VIRTUAL_JOYSTICK_DESC_VERSION - no longer needed
 
 The following symbols have been removed:
+* SDL_IPHONE_MAX_GFORCE
 * SDL_JOYBALLMOTION
+
 
 The following structures have been renamed:
 * SDL_JoystickGUID => SDL_GUID
@@ -1172,6 +1174,7 @@ The following functions have been removed:
 * SDL_GetRelativeMouseMode() - replaced with SDL_GetWindowRelativeMouseMode()
 
 The following symbols have been renamed:
+* SDL_BUTTON => SDL_BUTTON_MASK
 * SDL_NUM_SYSTEM_CURSORS => SDL_SYSTEM_CURSOR_COUNT
 * SDL_SYSTEM_CURSOR_ARROW => SDL_SYSTEM_CURSOR_DEFAULT
 * SDL_SYSTEM_CURSOR_HAND => SDL_SYSTEM_CURSOR_POINTER
@@ -2026,6 +2029,7 @@ SDL_CreateThread and SDL_CreateThreadWithProperties now take beginthread/endthre
 SDL_GetTLS() and SDL_SetTLS() take a pointer to a TLS ID, and will automatically initialize it in a thread-safe way as needed.
 
 The following functions have been renamed:
+* SDL_SetThreadPriority() => SDL_SetCurrentThreadPriority()
 * SDL_TLSCleanup() => SDL_CleanupTLS()
 * SDL_TLSGet() => SDL_GetTLS()
 * SDL_TLSSet() => SDL_SetTLS(), returns bool
@@ -2130,7 +2134,9 @@ SDL_CreateWindow() has been simplified and no longer takes a window position. Yo
     SDL_SetNumberProperty(props, SDL_PROP_WINDOW_CREATE_Y_NUMBER, y);
     SDL_SetNumberProperty(props, SDL_PROP_WINDOW_CREATE_WIDTH_NUMBER, width);
     SDL_SetNumberProperty(props, SDL_PROP_WINDOW_CREATE_HEIGHT_NUMBER, height);
-    SDL_SetNumberProperty(props, "flags", flags);
+    // For window flags you should use separate window creation properties,
+    // but for easier migration from SDL2 you can use the following:
+    SDL_SetNumberProperty(props, SDL_PROP_WINDOW_CREATE_FLAGS_NUMBER, flags);
     pWindow = SDL_CreateWindowWithProperties(props);
     SDL_DestroyProperties(props);
     if (window) {
@@ -2204,7 +2210,6 @@ The following functions have been renamed:
 * SDL_SetWindowDisplayMode() => SDL_SetWindowFullscreenMode(), returns bool
 
 The following functions have been removed:
-* SDL_GetClosestFullscreenDisplayMode()
 * SDL_GetDisplayDPI() - not reliable across platforms, approximately replaced by multiplying SDL_GetWindowDisplayScale() times 160 on iPhone and Android, and 96 on other platforms.
 * SDL_GetDisplayMode()
 * SDL_GetNumDisplayModes() - replaced with SDL_GetFullscreenDisplayModes()
@@ -2223,6 +2228,10 @@ The following symbols have been renamed:
 * SDL_DISPLAYEVENT_DISCONNECTED => SDL_EVENT_DISPLAY_REMOVED
 * SDL_DISPLAYEVENT_MOVED => SDL_EVENT_DISPLAY_MOVED
 * SDL_DISPLAYEVENT_ORIENTATION => SDL_EVENT_DISPLAY_ORIENTATION
+* SDL_GLattr => SDL_GLAttr
+* SDL_GLcontextFlag => SDL_GLContextFlag
+* SDL_GLcontextReleaseFlag => SDL_GLContextReleaseFlag
+* SDL_GLprofile => SDL_GLProfile
 * SDL_WINDOWEVENT_CLOSE => SDL_EVENT_WINDOW_CLOSE_REQUESTED
 * SDL_WINDOWEVENT_DISPLAY_CHANGED => SDL_EVENT_WINDOW_DISPLAY_CHANGED
 * SDL_WINDOWEVENT_ENTER => SDL_EVENT_WINDOW_MOUSE_ENTER
@@ -2239,11 +2248,11 @@ The following symbols have been renamed:
 * SDL_WINDOWEVENT_RESIZED => SDL_EVENT_WINDOW_RESIZED
 * SDL_WINDOWEVENT_RESTORED => SDL_EVENT_WINDOW_RESTORED
 * SDL_WINDOWEVENT_SHOWN => SDL_EVENT_WINDOW_SHOWN
-* SDL_WINDOWEVENT_SIZE_CHANGED => SDL_EVENT_WINDOW_SIZE_CHANGED
 * SDL_WINDOW_ALLOW_HIGHDPI => SDL_WINDOW_HIGH_PIXEL_DENSITY
 * SDL_WINDOW_INPUT_GRABBED => SDL_WINDOW_MOUSE_GRABBED
 
 The following symbols have been removed:
+* SDL_WINDOWEVENT_SIZE_CHANGED - handle the SDL_EVENT_WINDOW_RESIZED and SDL_EVENT_WINDOW_PIXEL_SIZE_CHANGED events instead
 * SDL_WINDOWEVENT_TAKE_FOCUS
 
 The following window operations are now considered to be asynchronous requests and should not be assumed to succeed unless
