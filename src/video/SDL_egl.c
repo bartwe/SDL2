@@ -1177,7 +1177,7 @@ void SDL_EGL_DeleteContext(_THIS, SDL_GLContext context)
     }
 }
 
-EGLSurface *SDL_EGL_CreateSurface(_THIS, NativeWindowType nw)
+EGLSurface SDL_EGL_CreateSurface(_THIS, NativeWindowType nw)
 {
 #ifdef SDL_VIDEO_DRIVER_ANDROID
     EGLint format_wanted;
