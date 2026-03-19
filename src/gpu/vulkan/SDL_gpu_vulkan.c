@@ -32,6 +32,7 @@
 #include <SDL3/SDL_vulkan.h>
 
 #include "../SDL_sysgpu.h"
+#include "../../video/SDL_vulkan_internal.h"
 #include "../../events/SDL_windowevents_c.h"
 
 // Global Vulkan Loader Entry Points
@@ -1260,6 +1261,93 @@ static inline const char *VkErrorMessages(VkResult code)
 #undef ERR_TO_STR
 }
 
+static const char *VkErrorFriendlyMessage(VkResult code)
+{
+    switch ((int)code) {
+    case VK_SUCCESS:
+        return "The Vulkan operation completed successfully.";
+    case VK_NOT_READY:
+        return "The requested Vulkan work has not completed yet.";
+    case VK_TIMEOUT:
+        return "The Vulkan operation timed out before completion.";
+    case VK_EVENT_SET:
+        return "The Vulkan event is signaled.";
+    case VK_EVENT_RESET:
+        return "The Vulkan event is unsignaled.";
+    case VK_INCOMPLETE:
+        return "Vulkan returned only part of the requested data.";
+    case VK_ERROR_OUT_OF_HOST_MEMORY:
+        return "The CPU-side driver ran out of memory.";
+    case VK_ERROR_OUT_OF_DEVICE_MEMORY:
+        return "The GPU ran out of device memory.";
+    case VK_ERROR_INITIALIZATION_FAILED:
+        return "Vulkan could not initialize the requested object or state.";
+    case VK_ERROR_DEVICE_LOST:
+        return "The GPU device was lost. The driver or hardware likely reset.";
+    case VK_ERROR_MEMORY_MAP_FAILED:
+        return "Vulkan could not map the requested memory range.";
+    case VK_ERROR_LAYER_NOT_PRESENT:
+        return "A requested Vulkan validation or driver layer is unavailable.";
+    case VK_ERROR_EXTENSION_NOT_PRESENT:
+        return "A required Vulkan extension is unavailable.";
+    case VK_ERROR_FEATURE_NOT_PRESENT:
+        return "The selected GPU does not support a required Vulkan feature.";
+    case VK_ERROR_INCOMPATIBLE_DRIVER:
+        return "The installed Vulkan driver is incompatible with this application.";
+    case VK_ERROR_TOO_MANY_OBJECTS:
+        return "The driver refused to create more Vulkan objects of this type.";
+    case VK_ERROR_FORMAT_NOT_SUPPORTED:
+        return "The requested Vulkan format is unsupported on this GPU.";
+    case VK_ERROR_FRAGMENTED_POOL:
+        return "The descriptor or memory pool is too fragmented to satisfy the request.";
+    case VK_ERROR_UNKNOWN:
+        return "The Vulkan driver reported an unspecified internal failure.";
+    case VK_ERROR_OUT_OF_POOL_MEMORY:
+        return "The Vulkan pool does not have enough remaining memory.";
+    case VK_ERROR_INVALID_EXTERNAL_HANDLE:
+        return "A supplied external handle is invalid for this Vulkan operation.";
+    case VK_ERROR_FRAGMENTATION:
+        return "The driver could not allocate due to memory fragmentation.";
+    case VK_ERROR_INVALID_OPAQUE_CAPTURE_ADDRESS:
+        return "A Vulkan opaque capture address was invalid.";
+    case VK_ERROR_SURFACE_LOST_KHR:
+        return "The Vulkan presentation surface is no longer valid.";
+    case VK_ERROR_NATIVE_WINDOW_IN_USE_KHR:
+        return "The native window is already bound to another Vulkan surface.";
+    case VK_SUBOPTIMAL_KHR:
+        return "The Vulkan swapchain still works, but no longer matches the surface optimally.";
+    case VK_ERROR_OUT_OF_DATE_KHR:
+        return "The Vulkan swapchain is out of date and must be recreated.";
+    case VK_ERROR_INCOMPATIBLE_DISPLAY_KHR:
+        return "The display is incompatible with the requested Vulkan presentation settings.";
+    case VK_ERROR_VALIDATION_FAILED_EXT:
+        return "Vulkan validation rejected the parameters or object state.";
+    case VK_ERROR_INVALID_SHADER_NV:
+        return "The Vulkan shader binary is invalid for the active driver.";
+    case VK_ERROR_INVALID_DRM_FORMAT_MODIFIER_PLANE_LAYOUT_EXT:
+        return "The DRM format modifier plane layout is invalid.";
+    case VK_ERROR_NOT_PERMITTED_EXT:
+        return "The Vulkan operation is not permitted in the current environment.";
+    case VK_ERROR_FULL_SCREEN_EXCLUSIVE_MODE_LOST_EXT:
+        return "Exclusive fullscreen access was lost.";
+    case VK_THREAD_IDLE_KHR:
+        return "The deferred operation thread is idle.";
+    case VK_THREAD_DONE_KHR:
+        return "The deferred operation thread has completed.";
+    case VK_OPERATION_DEFERRED_KHR:
+        return "The Vulkan driver deferred completion of the operation.";
+    case VK_OPERATION_NOT_DEFERRED_KHR:
+        return "The Vulkan driver completed the operation immediately.";
+    case VK_PIPELINE_COMPILE_REQUIRED_EXT:
+        return "Additional pipeline compilation is required before this pipeline can be used.";
+    default:
+        if (code < 0) {
+            return "The Vulkan driver returned an unrecognized error code.";
+        }
+        return "The Vulkan driver returned an unrecognized status code.";
+    }
+}
+
 #define SET_ERROR(fmt, msg)                               \
     do {                                                  \
         if (renderer->debugMode) {                        \
@@ -1278,15 +1366,23 @@ static inline const char *VkErrorMessages(VkResult code)
 
 #define SET_STRING_ERROR_AND_RETURN(msg, ret) SET_ERROR_AND_RETURN("%s", msg, ret)
 
-#define CHECK_VULKAN_ERROR_AND_RETURN(res, fn, ret)                                     \
-    do {                                                                                \
-        if ((res) != VK_SUCCESS) {                                                      \
-            if (renderer->debugMode) {                                                  \
-                SDL_LogError(SDL_LOG_CATEGORY_GPU, "%s %s", #fn, VkErrorMessages(res)); \
-            }                                                                           \
-            SDL_SetError("%s %s", #fn, VkErrorMessages(res));                           \
-            return (ret);                                                               \
-        }                                                                               \
+#define CHECK_VULKAN_ERROR_AND_RETURN(res, fn, ret)                                                             \
+    do {                                                                                                        \
+        if ((res) != VK_SUCCESS) {                                                                              \
+            const char *vkResultName = SDL_Vulkan_GetResultString(res);                                         \
+            const char *vkLegacyName = VkErrorMessages(res);                                                    \
+            const char *vkFriendlyMessage = VkErrorFriendlyMessage(res);                                        \
+            const char *vkDisplayName = SDL_strcmp(vkResultName, "VK_ERROR_<Unknown>") == 0 ||                \
+                                                 SDL_strcmp(vkResultName, "VK_<Unknown>") == 0                 \
+                                             ? vkLegacyName                                                     \
+                                             : vkResultName;                                                    \
+            if (renderer->debugMode) {                                                                          \
+                SDL_LogError(SDL_LOG_CATEGORY_GPU, "%s failed with %s (%d): %s", #fn, vkDisplayName,          \
+                             (int)(res), vkFriendlyMessage);                                                    \
+            }                                                                                                   \
+            SDL_SetError("%s failed with %s (%d): %s", #fn, vkDisplayName, (int)(res), vkFriendlyMessage);    \
+            return (ret);                                                                                       \
+        }                                                                                                       \
     } while (0)
 
 // Utility
