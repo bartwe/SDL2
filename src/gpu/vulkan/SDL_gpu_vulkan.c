@@ -1105,6 +1105,7 @@ typedef struct VulkanFeatures
 struct VulkanRenderer
 {
     VkInstance instance;
+    VkDebugUtilsMessengerEXT debugUtilsMessenger;
     VkPhysicalDevice physicalDevice;
     VkPhysicalDeviceProperties2KHR physicalDeviceProperties;
     VkPhysicalDeviceDriverPropertiesKHR physicalDeviceDriverProperties;
@@ -1127,6 +1128,7 @@ struct VulkanRenderer
     bool supportsPortabilityEnumeration;
     bool supportsFillModeNonSolid;
     bool supportsMultiDrawIndirect;
+    char lastValidationMessage[2048];
 
     VulkanMemoryAllocator *memoryAllocator;
     VkPhysicalDeviceMemoryProperties memoryProperties;
@@ -1348,6 +1350,136 @@ static const char *VkErrorFriendlyMessage(VkResult code)
     }
 }
 
+static const char *VULKAN_INTERNAL_GetDebugSeverityName(VkDebugUtilsMessageSeverityFlagBitsEXT severity)
+{
+    if ((severity & VK_DEBUG_UTILS_MESSAGE_SEVERITY_ERROR_BIT_EXT) != 0) {
+        return "error";
+    }
+    if ((severity & VK_DEBUG_UTILS_MESSAGE_SEVERITY_WARNING_BIT_EXT) != 0) {
+        return "warning";
+    }
+    if ((severity & VK_DEBUG_UTILS_MESSAGE_SEVERITY_INFO_BIT_EXT) != 0) {
+        return "info";
+    }
+    if ((severity & VK_DEBUG_UTILS_MESSAGE_SEVERITY_VERBOSE_BIT_EXT) != 0) {
+        return "verbose";
+    }
+    return "unknown";
+}
+
+static const char *VULKAN_INTERNAL_GetDebugTypeName(VkDebugUtilsMessageTypeFlagsEXT type)
+{
+    if ((type & VK_DEBUG_UTILS_MESSAGE_TYPE_VALIDATION_BIT_EXT) != 0) {
+        return "validation";
+    }
+    if ((type & VK_DEBUG_UTILS_MESSAGE_TYPE_PERFORMANCE_BIT_EXT) != 0) {
+        return "performance";
+    }
+    if ((type & VK_DEBUG_UTILS_MESSAGE_TYPE_GENERAL_BIT_EXT) != 0) {
+        return "general";
+    }
+    return "unknown";
+}
+
+static VKAPI_ATTR VkBool32 VKAPI_CALL VULKAN_INTERNAL_DebugUtilsMessengerCallback(
+    VkDebugUtilsMessageSeverityFlagBitsEXT severity,
+    VkDebugUtilsMessageTypeFlagsEXT type,
+    const VkDebugUtilsMessengerCallbackDataEXT *callbackData,
+    void *userData)
+{
+    VulkanRenderer *renderer = (VulkanRenderer *)userData;
+    const char *severityName = VULKAN_INTERNAL_GetDebugSeverityName(severity);
+    const char *typeName = VULKAN_INTERNAL_GetDebugTypeName(type);
+    const char *messageIdName = (callbackData && callbackData->pMessageIdName) ? callbackData->pMessageIdName : "<unknown>";
+    const char *message = (callbackData && callbackData->pMessage) ? callbackData->pMessage : "<no message>";
+
+    char fullMessage[4096];
+    SDL_snprintf(
+        fullMessage,
+        sizeof(fullMessage),
+        "Vulkan %s %s [%s]: %s",
+        severityName,
+        typeName,
+        messageIdName,
+        message);
+
+    if (renderer) {
+        SDL_strlcpy(renderer->lastValidationMessage, fullMessage, sizeof(renderer->lastValidationMessage));
+    }
+
+    if ((severity & VK_DEBUG_UTILS_MESSAGE_SEVERITY_ERROR_BIT_EXT) != 0) {
+        SDL_LogError(SDL_LOG_CATEGORY_GPU, "%s", fullMessage);
+    } else if ((severity & VK_DEBUG_UTILS_MESSAGE_SEVERITY_WARNING_BIT_EXT) != 0) {
+        SDL_LogWarn(SDL_LOG_CATEGORY_GPU, "%s", fullMessage);
+    } else if ((severity & VK_DEBUG_UTILS_MESSAGE_SEVERITY_INFO_BIT_EXT) != 0) {
+        SDL_LogInfo(SDL_LOG_CATEGORY_GPU, "%s", fullMessage);
+    } else {
+        SDL_LogVerbose(SDL_LOG_CATEGORY_GPU, "%s", fullMessage);
+    }
+
+    return VK_FALSE;
+}
+
+static void VULKAN_INTERNAL_FillDebugUtilsMessengerCreateInfo(
+    VkDebugUtilsMessengerCreateInfoEXT *createInfo,
+    void *userData)
+{
+    SDL_zerop(createInfo);
+    createInfo->sType = VK_STRUCTURE_TYPE_DEBUG_UTILS_MESSENGER_CREATE_INFO_EXT;
+    createInfo->messageSeverity =
+        VK_DEBUG_UTILS_MESSAGE_SEVERITY_VERBOSE_BIT_EXT |
+        VK_DEBUG_UTILS_MESSAGE_SEVERITY_INFO_BIT_EXT |
+        VK_DEBUG_UTILS_MESSAGE_SEVERITY_WARNING_BIT_EXT |
+        VK_DEBUG_UTILS_MESSAGE_SEVERITY_ERROR_BIT_EXT;
+    createInfo->messageType =
+        VK_DEBUG_UTILS_MESSAGE_TYPE_GENERAL_BIT_EXT |
+        VK_DEBUG_UTILS_MESSAGE_TYPE_VALIDATION_BIT_EXT |
+        VK_DEBUG_UTILS_MESSAGE_TYPE_PERFORMANCE_BIT_EXT;
+    createInfo->pfnUserCallback = VULKAN_INTERNAL_DebugUtilsMessengerCallback;
+    createInfo->pUserData = userData;
+}
+
+static void VULKAN_INTERNAL_DestroyDebugMessenger(VulkanRenderer *renderer)
+{
+    if (!renderer || !renderer->debugUtilsMessenger || !renderer->vkDestroyDebugUtilsMessengerEXT) {
+        return;
+    }
+
+    renderer->vkDestroyDebugUtilsMessengerEXT(renderer->instance, renderer->debugUtilsMessenger, NULL);
+    renderer->debugUtilsMessenger = VK_NULL_HANDLE;
+}
+
+static bool VULKAN_INTERNAL_CreateDebugMessenger(VulkanRenderer *renderer)
+{
+    VkDebugUtilsMessengerCreateInfoEXT createInfo;
+    VkResult result;
+
+    if (!renderer || !renderer->debugMode || !renderer->supportsDebugUtils || !renderer->vkCreateDebugUtilsMessengerEXT) {
+        return true;
+    }
+
+    VULKAN_INTERNAL_FillDebugUtilsMessengerCreateInfo(&createInfo, renderer);
+    result = renderer->vkCreateDebugUtilsMessengerEXT(renderer->instance, &createInfo, NULL, &renderer->debugUtilsMessenger);
+    if (result != VK_SUCCESS) {
+        const char *vkResultName = SDL_Vulkan_GetResultString(result);
+        const char *vkLegacyName = VkErrorMessages(result);
+        const char *vkFriendlyMessage = VkErrorFriendlyMessage(result);
+        const char *vkDisplayName = SDL_strcmp(vkResultName, "VK_ERROR_<Unknown>") == 0 ||
+                                             SDL_strcmp(vkResultName, "VK_<Unknown>") == 0
+                                         ? vkLegacyName
+                                         : vkResultName;
+        SDL_SetError(
+            "%s failed with %s (%d): %s",
+            "vkCreateDebugUtilsMessengerEXT",
+            vkDisplayName,
+            (int)result,
+            vkFriendlyMessage);
+        return false;
+    }
+
+    return true;
+}
+
 #define SET_ERROR(fmt, msg)                               \
     do {                                                  \
         if (renderer->debugMode) {                        \
@@ -1376,11 +1508,24 @@ static const char *VkErrorFriendlyMessage(VkResult code)
                                                  SDL_strcmp(vkResultName, "VK_<Unknown>") == 0                 \
                                              ? vkLegacyName                                                     \
                                              : vkResultName;                                                    \
+            const char *vkValidationMessage = renderer->lastValidationMessage[0] != '\0'                       \
+                                                  ? renderer->lastValidationMessage                             \
+                                                  : NULL;                                                       \
             if (renderer->debugMode) {                                                                          \
-                SDL_LogError(SDL_LOG_CATEGORY_GPU, "%s failed with %s (%d): %s", #fn, vkDisplayName,          \
-                             (int)(res), vkFriendlyMessage);                                                    \
+                if (vkValidationMessage) {                                                                      \
+                    SDL_LogError(SDL_LOG_CATEGORY_GPU, "%s failed with %s (%d): %s Last validation message: %s", \
+                                 #fn, vkDisplayName, (int)(res), vkFriendlyMessage, vkValidationMessage);      \
+                } else {                                                                                        \
+                    SDL_LogError(SDL_LOG_CATEGORY_GPU, "%s failed with %s (%d): %s", #fn, vkDisplayName,      \
+                                 (int)(res), vkFriendlyMessage);                                                \
+                }                                                                                               \
             }                                                                                                   \
-            SDL_SetError("%s failed with %s (%d): %s", #fn, vkDisplayName, (int)(res), vkFriendlyMessage);    \
+            if (vkValidationMessage) {                                                                          \
+                SDL_SetError("%s failed with %s (%d): %s Last validation message: %s", #fn, vkDisplayName,    \
+                             (int)(res), vkFriendlyMessage, vkValidationMessage);                               \
+            } else {                                                                                            \
+                SDL_SetError("%s failed with %s (%d): %s", #fn, vkDisplayName, (int)(res), vkFriendlyMessage); \
+            }                                                                                                   \
             return (ret);                                                                                       \
         }                                                                                                       \
     } while (0)
@@ -5041,6 +5186,7 @@ static void VULKAN_DestroyDevice(
     SDL_DestroyMutex(renderer->windowLock);
 
     renderer->vkDestroyDevice(renderer->logicalDevice, NULL);
+    VULKAN_INTERNAL_DestroyDebugMessenger(renderer);
     renderer->vkDestroyInstance(renderer->instance, NULL);
 
     SDL_DestroyProperties(renderer->props);
@@ -11828,6 +11974,7 @@ static Uint8 VULKAN_INTERNAL_CreateInstance(VulkanRenderer *renderer, VulkanFeat
     VkResult vulkanResult;
     VkApplicationInfo appInfo;
     VkInstanceCreateFlags createFlags;
+    VkDebugUtilsMessengerCreateInfoEXT debugCreateInfo;
     const char *const *originalInstanceExtensionNames;
     const char **instanceExtensionNames;
     Uint32 instanceExtensionCount;
@@ -11947,6 +12094,11 @@ static Uint8 VULKAN_INTERNAL_CreateInstance(VulkanRenderer *renderer, VulkanFeat
         }
     } else {
         createInfo.enabledLayerCount = 0;
+    }
+
+    if (renderer->debugMode && renderer->supportsDebugUtils) {
+        VULKAN_INTERNAL_FillDebugUtilsMessengerCreateInfo(&debugCreateInfo, renderer);
+        createInfo.pNext = &debugCreateInfo;
     }
 
     vulkanResult = vkCreateInstance(&createInfo, NULL, &renderer->instance);
@@ -12586,6 +12738,10 @@ static bool VULKAN_INTERNAL_PrepareVulkan(
     renderer->func = (PFN_##func)vkGetInstanceProcAddr(renderer->instance, #func);
 #include "SDL_gpu_vulkan_vkfuncs.h"
 
+    if (!VULKAN_INTERNAL_CreateDebugMessenger(renderer)) {
+        return false;
+    }
+
     if (!VULKAN_INTERNAL_DeterminePhysicalDevice(renderer, features)) {
         SDL_LogWarn(SDL_LOG_CATEGORY_GPU, "Vulkan: Failed to determine a suitable physical device");
         return false;
@@ -12621,6 +12777,7 @@ static bool VULKAN_PrepareDriver(SDL_VideoDevice *_this, SDL_PropertiesID props)
 
         result = VULKAN_INTERNAL_PrepareVulkan(renderer, &features, props);
         if (result) {
+            VULKAN_INTERNAL_DestroyDebugMessenger(renderer);
             renderer->vkDestroyInstance(renderer->instance, NULL);
         }
 
@@ -12661,6 +12818,10 @@ static SDL_GPUDevice *VULKAN_CreateDevice(bool debugMode, bool preferLowPower, S
 
     if (!VULKAN_INTERNAL_PrepareVulkan(renderer, &features, props)) {
         SET_STRING_ERROR("Failed to initialize Vulkan!");
+        if (renderer->instance != VK_NULL_HANDLE && renderer->vkDestroyInstance) {
+            VULKAN_INTERNAL_DestroyDebugMessenger(renderer);
+            renderer->vkDestroyInstance(renderer->instance, NULL);
+        }
         SDL_free(renderer);
         SDL_Vulkan_UnloadLibrary();
         return NULL;
@@ -12768,6 +12929,8 @@ static SDL_GPUDevice *VULKAN_CreateDevice(bool debugMode, bool preferLowPower, S
 
     if (!VULKAN_INTERNAL_CreateLogicalDevice(renderer, &features)) {
         SET_STRING_ERROR("Failed to create logical device!");
+        VULKAN_INTERNAL_DestroyDebugMessenger(renderer);
+        renderer->vkDestroyInstance(renderer->instance, NULL);
         SDL_free(renderer);
         SDL_Vulkan_UnloadLibrary();
         return NULL;

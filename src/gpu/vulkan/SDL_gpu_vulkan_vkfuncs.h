@@ -65,6 +65,8 @@ VULKAN_INSTANCE_FUNCTION(vkGetPhysicalDeviceSurfacePresentModesKHR)
 VULKAN_INSTANCE_FUNCTION(vkGetPhysicalDeviceSurfaceSupportKHR)
 
 // VK_EXT_debug_utils
+VULKAN_INSTANCE_FUNCTION(vkCreateDebugUtilsMessengerEXT)
+VULKAN_INSTANCE_FUNCTION(vkDestroyDebugUtilsMessengerEXT)
 VULKAN_INSTANCE_FUNCTION(vkCmdBeginDebugUtilsLabelEXT)
 VULKAN_INSTANCE_FUNCTION(vkSetDebugUtilsObjectNameEXT)
 VULKAN_INSTANCE_FUNCTION(vkCmdEndDebugUtilsLabelEXT)
