@@ -1253,6 +1253,28 @@ typedef HRESULT (D3DAPI* PFN_D3D12_XBOX_CREATE_DEVICE)(_In_opt_ IGraphicsUnknown
 
 // Logging
 
+// DXGI error descriptions — FormatMessageA doesn't know about DXGI facility codes.
+static const char *D3D12_INTERNAL_GetDxgiErrorDescription(HRESULT hr)
+{
+    switch ((unsigned long)hr) {
+    case 0x887A0001: return "DXGI_ERROR_INVALID_CALL: Invalid parameter data.";
+    case 0x887A0002: return "DXGI_ERROR_NOT_FOUND: The requested item was not found.";
+    case 0x887A0003: return "DXGI_ERROR_MORE_DATA: The buffer is too small for the requested data.";
+    case 0x887A0004: return "DXGI_ERROR_UNSUPPORTED: Not supported by this device or driver.";
+    case 0x887A0005: return "DXGI_ERROR_DEVICE_REMOVED: The GPU was removed or the driver was upgraded.";
+    case 0x887A0006: return "DXGI_ERROR_DEVICE_HUNG: The GPU hung due to badly formed commands.";
+    case 0x887A0007: return "DXGI_ERROR_DEVICE_RESET: The GPU reset due to a badly formed command.";
+    case 0x887A000A: return "DXGI_ERROR_WAS_STILL_DRAWING: The GPU was busy.";
+    case 0x887A000B: return "DXGI_ERROR_FRAME_STATISTICS_DISJOINT: Presentation statistics interrupted.";
+    case 0x887A0020: return "DXGI_ERROR_DRIVER_INTERNAL_ERROR: Internal driver error.";
+    case 0x887A0022: return "DXGI_ERROR_NOT_CURRENTLY_AVAILABLE: Resource not currently available.";
+    case 0x887A0027: return "DXGI_ERROR_WAIT_TIMEOUT: The timeout interval elapsed.";
+    case 0x887A002B: return "DXGI_ERROR_ACCESS_DENIED: Write to a read-only shared resource.";
+    case 0x887A002D: return "DXGI_ERROR_SDK_COMPONENT_MISSING: A required SDK component is missing.";
+    default: return NULL;
+    }
+}
+
 static void D3D12_INTERNAL_SetError(
     D3D12Renderer *renderer,
     const char *msg,
@@ -1280,8 +1302,16 @@ static void D3D12_INTERNAL_SetError(
         MAX_ERROR_LEN,
         NULL);
 
-    // No message? Screw it, just post the code.
+    // FormatMessage doesn't know DXGI facility codes — try our lookup.
     if (dwChars == 0) {
+        const char *dxgiDesc = D3D12_INTERNAL_GetDxgiErrorDescription(res);
+        if (dxgiDesc) {
+            if (renderer->debug_mode) {
+                SDL_LogError(SDL_LOG_CATEGORY_GPU, "%s! %s (0x%08lX)", msg, dxgiDesc, (unsigned long)res);
+            }
+            SDL_SetError("%s! %s (0x%08lX)", msg, dxgiDesc, (unsigned long)res);
+            return;
+        }
         if (renderer->debug_mode) {
             SDL_LogError(SDL_LOG_CATEGORY_GPU, "%s! Error Code: " HRESULT_FMT, msg, res);
         }

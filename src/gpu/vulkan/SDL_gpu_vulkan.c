@@ -62,6 +62,8 @@ typedef struct VulkanExtensions
     Uint8 MSFT_layered_driver;
     // Only required for decoding HDR ASTC textures
     Uint8 EXT_texture_compression_astc_hdr;
+    // Optional: GPU fault diagnostics after device loss
+    Uint8 KHR_device_fault;
 } VulkanExtensions;
 
 // Defines
@@ -1257,6 +1259,12 @@ static inline const char *VkErrorMessages(VkResult code)
         ERR_TO_STR(VK_SUBOPTIMAL_KHR)
         ERR_TO_STR(VK_ERROR_NATIVE_WINDOW_IN_USE_KHR)
         ERR_TO_STR(VK_ERROR_INVALID_SHADER_NV)
+        ERR_TO_STR(VK_ERROR_MEMORY_MAP_FAILED)
+        ERR_TO_STR(VK_ERROR_FORMAT_NOT_SUPPORTED)
+        ERR_TO_STR(VK_ERROR_UNKNOWN)
+        ERR_TO_STR(VK_ERROR_INVALID_EXTERNAL_HANDLE)
+        ERR_TO_STR(VK_ERROR_FRAGMENTATION)
+        ERR_TO_STR(VK_ERROR_INVALID_OPAQUE_CAPTURE_ADDRESS)
     default:
         return "Unhandled VkResult!";
     }
@@ -11290,7 +11298,7 @@ static inline Uint8 CheckDeviceExtensions(
         supports->ext = 1;                   \
     }
         CHECK(KHR_swapchain)
-        else CHECK(KHR_maintenance1) else CHECK(KHR_driver_properties) else CHECK(KHR_portability_subset) else CHECK(MSFT_layered_driver) else CHECK(EXT_texture_compression_astc_hdr)
+        else CHECK(KHR_maintenance1) else CHECK(KHR_driver_properties) else CHECK(KHR_portability_subset) else CHECK(MSFT_layered_driver) else CHECK(EXT_texture_compression_astc_hdr) else CHECK(KHR_device_fault)
 #undef CHECK
     }
 
@@ -11306,7 +11314,8 @@ static inline Uint32 GetDeviceExtensionCount(VulkanExtensions *supports)
         supports->KHR_driver_properties +
         supports->KHR_portability_subset +
         supports->MSFT_layered_driver +
-        supports->EXT_texture_compression_astc_hdr);
+        supports->EXT_texture_compression_astc_hdr +
+        supports->KHR_device_fault);
 }
 
 static inline void CreateDeviceExtensionArray(
@@ -11324,6 +11333,7 @@ static inline void CreateDeviceExtensionArray(
     CHECK(KHR_portability_subset)
     CHECK(MSFT_layered_driver)
     CHECK(EXT_texture_compression_astc_hdr)
+    CHECK(KHR_device_fault)
 #undef CHECK
 }
 
