@@ -3033,8 +3033,8 @@ extern "C" {
  *
  * - "0": Force a request for an OpenGL context that is _not_ sRGB-capable.
  * - "1": Force a request for an OpenGL context that _is_ sRGB-capable.
- * - "skip": Don't make any request for an sRGB-capable context
- *   (don't specify the attribute at all during context creation time).
+ * - "skip": Don't make any request for an sRGB-capable context (don't specify
+ *   the attribute at all during context creation time).
  * - any other string is undefined behavior.
  *
  * If unset, or set to an empty string, SDL will make a request using the
@@ -4519,6 +4519,23 @@ extern "C" {
 #define SDL_HINT_WINDOWS_RAW_KEYBOARD_EXCLUDE_HOTKEYS "SDL_WINDOWS_RAW_KEYBOARD_EXCLUDE_HOTKEYS"
 
 /**
+ * A variable controlling whether the RIDEV_INPUTSINK flag is set when
+ * enabling Windows raw keyboard events.
+ *
+ * This enables the window to still receive input even if not in foreground.
+ *
+ * Focused windows that receive text input will still prevent input events from triggering.
+ *
+ * - "0": Input is not received when not in focus or foreground. (default)
+ * - "1": Input will be received even when not in focus or foreground.
+ *
+ * This hint can be set anytime.
+ *
+ * \since This hint is available since SDL 3.4.4.
+ */
+#define SDL_HINT_WINDOWS_RAW_KEYBOARD_INPUTSINK "SDL_WINDOWS_RAW_KEYBOARD_INPUTSINK"
+
+/**
  * A variable controlling whether SDL uses Kernel Semaphores on Windows.
  *
  * Kernel Semaphores are inter-process and require a context switch on every
@@ -4848,7 +4865,8 @@ extern SDL_DECLSPEC bool SDLCALL SDL_GetHintBoolean(const char *name, bool defau
  * A callback used to send notifications of hint value changes.
  *
  * This is called an initial time during SDL_AddHintCallback with the hint's
- * current value, and then again each time the hint's value changes.
+ * current value, and then again each time the hint's value changes. In the
+ * initial call, the current value is in both `oldValue` and `newValue`.
  *
  * \param userdata what was passed as `userdata` to SDL_AddHintCallback().
  * \param name what was passed as `name` to SDL_AddHintCallback().
