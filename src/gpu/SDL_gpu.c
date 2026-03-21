@@ -958,6 +958,106 @@ bool SDL_GPUTextureSupportsSampleCount(
         sample_count);
 }
 
+static const char *SDL_GetGPUTextureTypeDebugName(SDL_GPUTextureType type)
+{
+    switch (type) {
+    case SDL_GPU_TEXTURETYPE_2D: return "2D";
+    case SDL_GPU_TEXTURETYPE_2D_ARRAY: return "2D_ARRAY";
+    case SDL_GPU_TEXTURETYPE_3D: return "3D";
+    case SDL_GPU_TEXTURETYPE_CUBE: return "CUBE";
+    case SDL_GPU_TEXTURETYPE_CUBE_ARRAY: return "CUBE_ARRAY";
+    default: return "<unknown>";
+    }
+}
+
+static const char *SDL_GetGPUTextureFormatDebugName(SDL_GPUTextureFormat format)
+{
+    SDL_PixelFormat pixel_format = SDL_GetPixelFormatFromGPUTextureFormat(format);
+    if (pixel_format != SDL_PIXELFORMAT_UNKNOWN) {
+        const char *pixel_format_name = SDL_GetPixelFormatName(pixel_format);
+        if (pixel_format_name && pixel_format_name[0] != '\0' && SDL_strcmp(pixel_format_name, "SDL_PIXELFORMAT_UNKNOWN") != 0) {
+            return pixel_format_name;
+        }
+    }
+
+    switch (format) {
+    case SDL_GPU_TEXTUREFORMAT_BC1_RGBA_UNORM: return "BC1_RGBA_UNORM";
+    case SDL_GPU_TEXTUREFORMAT_BC2_RGBA_UNORM: return "BC2_RGBA_UNORM";
+    case SDL_GPU_TEXTUREFORMAT_BC3_RGBA_UNORM: return "BC3_RGBA_UNORM";
+    case SDL_GPU_TEXTUREFORMAT_BC4_R_UNORM: return "BC4_R_UNORM";
+    case SDL_GPU_TEXTUREFORMAT_BC5_RG_UNORM: return "BC5_RG_UNORM";
+    case SDL_GPU_TEXTUREFORMAT_BC6H_RGB_FLOAT: return "BC6H_RGB_FLOAT";
+    case SDL_GPU_TEXTUREFORMAT_BC6H_RGB_UFLOAT: return "BC6H_RGB_UFLOAT";
+    case SDL_GPU_TEXTUREFORMAT_BC7_RGBA_UNORM: return "BC7_RGBA_UNORM";
+    case SDL_GPU_TEXTUREFORMAT_BC1_RGBA_UNORM_SRGB: return "BC1_RGBA_UNORM_SRGB";
+    case SDL_GPU_TEXTUREFORMAT_BC2_RGBA_UNORM_SRGB: return "BC2_RGBA_UNORM_SRGB";
+    case SDL_GPU_TEXTUREFORMAT_BC3_RGBA_UNORM_SRGB: return "BC3_RGBA_UNORM_SRGB";
+    case SDL_GPU_TEXTUREFORMAT_BC7_RGBA_UNORM_SRGB: return "BC7_RGBA_UNORM_SRGB";
+    default: return "<unknown>";
+    }
+}
+
+static void SDL_FormatGPUTextureUsageFlags(SDL_GPUTextureUsageFlags usage, char *buffer, size_t buffer_size)
+{
+    bool has_any = false;
+
+    if (!buffer || buffer_size == 0) {
+        return;
+    }
+
+    buffer[0] = '\0';
+
+#define APPEND_TEXTURE_USAGE(flag, name)                                                                 \
+    if (usage & (flag)) {                                                                                \
+        SDL_snprintf(                                                                                    \
+            buffer + SDL_strlen(buffer),                                                                 \
+            buffer_size - SDL_strlen(buffer),                                                            \
+            "%s%s",                                                                                      \
+            has_any ? "|" : "",                                                                          \
+            (name));                                                                                     \
+        has_any = true;                                                                                  \
+    }
+
+    APPEND_TEXTURE_USAGE(SDL_GPU_TEXTUREUSAGE_SAMPLER, "SAMPLER");
+    APPEND_TEXTURE_USAGE(SDL_GPU_TEXTUREUSAGE_COLOR_TARGET, "COLOR_TARGET");
+    APPEND_TEXTURE_USAGE(SDL_GPU_TEXTUREUSAGE_DEPTH_STENCIL_TARGET, "DEPTH_STENCIL_TARGET");
+    APPEND_TEXTURE_USAGE(SDL_GPU_TEXTUREUSAGE_GRAPHICS_STORAGE_READ, "GRAPHICS_STORAGE_READ");
+    APPEND_TEXTURE_USAGE(SDL_GPU_TEXTUREUSAGE_COMPUTE_STORAGE_READ, "COMPUTE_STORAGE_READ");
+    APPEND_TEXTURE_USAGE(SDL_GPU_TEXTUREUSAGE_COMPUTE_STORAGE_WRITE, "COMPUTE_STORAGE_WRITE");
+    APPEND_TEXTURE_USAGE(SDL_GPU_TEXTUREUSAGE_COMPUTE_STORAGE_SIMULTANEOUS_READ_WRITE, "COMPUTE_STORAGE_SIMULTANEOUS_READ_WRITE");
+
+#undef APPEND_TEXTURE_USAGE
+
+    if (!has_any) {
+        SDL_strlcpy(buffer, "None", buffer_size);
+    }
+}
+
+static void SDL_SetTextureCreateValidationError(const char *reason, const SDL_GPUTextureCreateInfo *createinfo)
+{
+    char usage_text[256];
+
+    if (createinfo == NULL) {
+        SDL_SetError("%s", reason ? reason : "Texture create validation failed.");
+        return;
+    }
+
+    SDL_FormatGPUTextureUsageFlags(createinfo->usage, usage_text, sizeof(usage_text));
+    SDL_SetError(
+        "%s type=%s size=%ux%ux%u format=%s(%d) usage=%s (0x%08X) sample_count=%d levels=%u",
+        reason ? reason : "Texture create validation failed.",
+        SDL_GetGPUTextureTypeDebugName(createinfo->type),
+        createinfo->width,
+        createinfo->height,
+        createinfo->layer_count_or_depth,
+        SDL_GetGPUTextureFormatDebugName(createinfo->format),
+        (int)createinfo->format,
+        usage_text,
+        (unsigned int)createinfo->usage,
+        (int)createinfo->sample_count,
+        createinfo->num_levels);
+}
+
 // State Creation
 
 SDL_GPUComputePipeline *SDL_CreateGPUComputePipeline(
@@ -1243,129 +1343,118 @@ SDL_GPUTexture *SDL_CreateGPUTexture(
 
     if (device->debug_mode) {
         bool failed = false;
+        const char *failure_reason = NULL;
 
         const Uint32 MAX_2D_DIMENSION = 16384;
         const Uint32 MAX_3D_DIMENSION = 2048;
+
+#define FAIL_TEXTURE_CREATE(reason)             \
+        do {                                    \
+            SDL_assert_release(!(reason));      \
+            if (!failure_reason) {              \
+                failure_reason = (reason);      \
+            }                                   \
+            failed = true;                      \
+        } while (0)
 
         // Common checks for all texture types
         CHECK_TEXTUREFORMAT_ENUM_INVALID(createinfo->format, NULL)
 
         if (createinfo->width <= 0 || createinfo->height <= 0 || createinfo->layer_count_or_depth <= 0) {
-            SDL_assert_release(!"For any texture: width, height, and layer_count_or_depth must be >= 1");
-            failed = true;
+            FAIL_TEXTURE_CREATE("For any texture: width, height, and layer_count_or_depth must be >= 1");
         }
         if (createinfo->num_levels <= 0) {
-            SDL_assert_release(!"For any texture: num_levels must be >= 1");
-            failed = true;
+            FAIL_TEXTURE_CREATE("For any texture: num_levels must be >= 1");
         }
         if ((createinfo->usage & SDL_GPU_TEXTUREUSAGE_GRAPHICS_STORAGE_READ) && (createinfo->usage & SDL_GPU_TEXTUREUSAGE_SAMPLER)) {
-            SDL_assert_release(!"For any texture: usage cannot contain both GRAPHICS_STORAGE_READ and SAMPLER");
-            failed = true;
+            FAIL_TEXTURE_CREATE("For any texture: usage cannot contain both GRAPHICS_STORAGE_READ and SAMPLER");
         }
         if (createinfo->sample_count > SDL_GPU_SAMPLECOUNT_1 &&
             (createinfo->usage & (SDL_GPU_TEXTUREUSAGE_SAMPLER |
                                   SDL_GPU_TEXTUREUSAGE_GRAPHICS_STORAGE_READ |
                                   SDL_GPU_TEXTUREUSAGE_COMPUTE_STORAGE_READ |
                                   SDL_GPU_TEXTUREUSAGE_COMPUTE_STORAGE_WRITE))) {
-            SDL_assert_release(!"For multisample textures: usage cannot contain SAMPLER or STORAGE flags");
-            failed = true;
+            FAIL_TEXTURE_CREATE("For multisample textures: usage cannot contain SAMPLER or STORAGE flags");
         }
         if (IsDepthFormat(createinfo->format) && (createinfo->usage & ~(SDL_GPU_TEXTUREUSAGE_DEPTH_STENCIL_TARGET | SDL_GPU_TEXTUREUSAGE_SAMPLER))) {
-            SDL_assert_release(!"For depth textures: usage cannot contain any flags except for DEPTH_STENCIL_TARGET and SAMPLER");
-            failed = true;
+            FAIL_TEXTURE_CREATE("For depth textures: usage cannot contain any flags except for DEPTH_STENCIL_TARGET and SAMPLER");
         }
         if (IsIntegerFormat(createinfo->format) && (createinfo->usage & SDL_GPU_TEXTUREUSAGE_SAMPLER)) {
-            SDL_assert_release(!"For any texture: usage cannot contain SAMPLER for textures with an integer format");
-            failed = true;
+            FAIL_TEXTURE_CREATE("For any texture: usage cannot contain SAMPLER for textures with an integer format");
         }
 
         if (createinfo->type == SDL_GPU_TEXTURETYPE_CUBE) {
             // Cubemap validation
             if (createinfo->width != createinfo->height) {
-                SDL_assert_release(!"For cube textures: width and height must be identical");
-                failed = true;
+                FAIL_TEXTURE_CREATE("For cube textures: width and height must be identical");
             }
             if (createinfo->width > MAX_2D_DIMENSION || createinfo->height > MAX_2D_DIMENSION) {
-                SDL_assert_release(!"For cube textures: width and height must be <= 16384");
-                failed = true;
+                FAIL_TEXTURE_CREATE("For cube textures: width and height must be <= 16384");
             }
             if (createinfo->layer_count_or_depth != 6) {
-                SDL_assert_release(!"For cube textures: layer_count_or_depth must be 6");
-                failed = true;
+                FAIL_TEXTURE_CREATE("For cube textures: layer_count_or_depth must be 6");
             }
             if (createinfo->sample_count > SDL_GPU_SAMPLECOUNT_1) {
-                SDL_assert_release(!"For cube textures: sample_count must be SDL_GPU_SAMPLECOUNT_1");
-                failed = true;
+                FAIL_TEXTURE_CREATE("For cube textures: sample_count must be SDL_GPU_SAMPLECOUNT_1");
             }
             if (!SDL_GPUTextureSupportsFormat(device, createinfo->format, SDL_GPU_TEXTURETYPE_CUBE, createinfo->usage)) {
-                SDL_assert_release(!"For cube textures: the format is unsupported for the given usage");
-                failed = true;
+                FAIL_TEXTURE_CREATE("For cube textures: the format is unsupported for the given usage");
             }
         } else if (createinfo->type == SDL_GPU_TEXTURETYPE_CUBE_ARRAY) {
             // Cubemap array validation
             if (createinfo->width != createinfo->height) {
-                SDL_assert_release(!"For cube array textures: width and height must be identical");
-                failed = true;
+                FAIL_TEXTURE_CREATE("For cube array textures: width and height must be identical");
             }
             if (createinfo->width > MAX_2D_DIMENSION || createinfo->height > MAX_2D_DIMENSION) {
-                SDL_assert_release(!"For cube array textures: width and height must be <= 16384");
-                failed = true;
+                FAIL_TEXTURE_CREATE("For cube array textures: width and height must be <= 16384");
             }
             if (createinfo->layer_count_or_depth % 6 != 0) {
-                SDL_assert_release(!"For cube array textures: layer_count_or_depth must be a multiple of 6");
-                failed = true;
+                FAIL_TEXTURE_CREATE("For cube array textures: layer_count_or_depth must be a multiple of 6");
             }
             if (createinfo->sample_count > SDL_GPU_SAMPLECOUNT_1) {
-                SDL_assert_release(!"For cube array textures: sample_count must be SDL_GPU_SAMPLECOUNT_1");
-                failed = true;
+                FAIL_TEXTURE_CREATE("For cube array textures: sample_count must be SDL_GPU_SAMPLECOUNT_1");
             }
             if (!SDL_GPUTextureSupportsFormat(device, createinfo->format, SDL_GPU_TEXTURETYPE_CUBE_ARRAY, createinfo->usage)) {
-                SDL_assert_release(!"For cube array textures: the format is unsupported for the given usage");
-                failed = true;
+                FAIL_TEXTURE_CREATE("For cube array textures: the format is unsupported for the given usage");
             }
         } else if (createinfo->type == SDL_GPU_TEXTURETYPE_3D) {
             // 3D Texture Validation
             if (createinfo->width > MAX_3D_DIMENSION || createinfo->height > MAX_3D_DIMENSION || createinfo->layer_count_or_depth > MAX_3D_DIMENSION) {
-                SDL_assert_release(!"For 3D textures: width, height, and layer_count_or_depth must be <= 2048");
-                failed = true;
+                FAIL_TEXTURE_CREATE("For 3D textures: width, height, and layer_count_or_depth must be <= 2048");
             }
             if (createinfo->usage & SDL_GPU_TEXTUREUSAGE_DEPTH_STENCIL_TARGET) {
-                SDL_assert_release(!"For 3D textures: usage must not contain DEPTH_STENCIL_TARGET");
-                failed = true;
+                FAIL_TEXTURE_CREATE("For 3D textures: usage must not contain DEPTH_STENCIL_TARGET");
             }
             if (createinfo->sample_count > SDL_GPU_SAMPLECOUNT_1) {
-                SDL_assert_release(!"For 3D textures: sample_count must be SDL_GPU_SAMPLECOUNT_1");
-                failed = true;
+                FAIL_TEXTURE_CREATE("For 3D textures: sample_count must be SDL_GPU_SAMPLECOUNT_1");
             }
             if (!SDL_GPUTextureSupportsFormat(device, createinfo->format, SDL_GPU_TEXTURETYPE_3D, createinfo->usage)) {
-                SDL_assert_release(!"For 3D textures: the format is unsupported for the given usage");
-                failed = true;
+                FAIL_TEXTURE_CREATE("For 3D textures: the format is unsupported for the given usage");
             }
         } else {
             if (createinfo->type == SDL_GPU_TEXTURETYPE_2D_ARRAY) {
                 // Array Texture Validation
                 if (createinfo->usage & SDL_GPU_TEXTUREUSAGE_DEPTH_STENCIL_TARGET) {
-                    SDL_assert_release(!"For array textures: usage must not contain DEPTH_STENCIL_TARGET");
-                    failed = true;
+                    FAIL_TEXTURE_CREATE("For array textures: usage must not contain DEPTH_STENCIL_TARGET");
                 }
                 if (createinfo->sample_count > SDL_GPU_SAMPLECOUNT_1) {
-                    SDL_assert_release(!"For array textures: sample_count must be SDL_GPU_SAMPLECOUNT_1");
-                    failed = true;
+                    FAIL_TEXTURE_CREATE("For array textures: sample_count must be SDL_GPU_SAMPLECOUNT_1");
                 }
             }
             if (createinfo->sample_count > SDL_GPU_SAMPLECOUNT_1 && createinfo->num_levels > 1) {
-                SDL_assert_release(!"For 2D multisample textures: num_levels must be 1");
-                failed = true;
+                FAIL_TEXTURE_CREATE("For 2D multisample textures: num_levels must be 1");
             }
             if (!SDL_GPUTextureSupportsFormat(device, createinfo->format, SDL_GPU_TEXTURETYPE_2D, createinfo->usage)) {
-                SDL_assert_release(!"For 2D textures: the format is unsupported for the given usage");
-                failed = true;
+                FAIL_TEXTURE_CREATE("For 2D textures: the format is unsupported for the given usage");
             }
         }
 
         if (failed) {
+            SDL_SetTextureCreateValidationError(failure_reason, createinfo);
             return NULL;
         }
+
+#undef FAIL_TEXTURE_CREATE
     }
 
     return device->CreateTexture(
