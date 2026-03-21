@@ -12573,12 +12573,18 @@ static Uint8 VULKAN_INTERNAL_CreateLogicalDevice(
     deviceCreateInfo.pQueueCreateInfos = &queueCreateInfo;
     deviceCreateInfo.enabledLayerCount = 0;
     deviceCreateInfo.ppEnabledLayerNames = NULL;
-    deviceCreateInfo.enabledExtensionCount = GetDeviceExtensionCount(
-        &renderer->supports);
-    deviceExtensions = SDL_stack_alloc(
-        const char *,
-        deviceCreateInfo.enabledExtensionCount);
-    CreateDeviceExtensionArray(&renderer->supports, deviceExtensions);
+    {
+        Uint32 builtinCount = GetDeviceExtensionCount(&renderer->supports);
+        Uint32 additionalCount = features->additionalDeviceExtensionCount;
+        deviceCreateInfo.enabledExtensionCount = builtinCount + additionalCount;
+        deviceExtensions = SDL_stack_alloc(
+            const char *,
+            deviceCreateInfo.enabledExtensionCount);
+        CreateDeviceExtensionArray(&renderer->supports, deviceExtensions);
+        for (Uint32 i = 0; i < additionalCount; i++) {
+            deviceExtensions[builtinCount + i] = features->additionalDeviceExtensionNames[i];
+        }
+    }
     deviceCreateInfo.ppEnabledExtensionNames = deviceExtensions;
 
     VkPhysicalDeviceFeatures2 featureList;
