@@ -63,7 +63,7 @@ typedef struct VulkanExtensions
     // Only required for decoding HDR ASTC textures
     Uint8 EXT_texture_compression_astc_hdr;
     // Optional: GPU fault diagnostics after device loss
-    Uint8 KHR_device_fault;
+    Uint8 EXT_device_fault;
 } VulkanExtensions;
 
 // Defines
@@ -11434,7 +11434,7 @@ static inline Uint8 CheckDeviceExtensions(
         supports->ext = 1;                   \
     }
         CHECK(KHR_swapchain)
-        else CHECK(KHR_maintenance1) else CHECK(KHR_driver_properties) else CHECK(KHR_portability_subset) else CHECK(MSFT_layered_driver) else CHECK(EXT_texture_compression_astc_hdr) else CHECK(KHR_device_fault)
+        else CHECK(KHR_maintenance1) else CHECK(KHR_driver_properties) else CHECK(KHR_portability_subset) else CHECK(MSFT_layered_driver) else CHECK(EXT_texture_compression_astc_hdr) else CHECK(EXT_device_fault)
 #undef CHECK
     }
 
@@ -11451,7 +11451,7 @@ static inline Uint32 GetDeviceExtensionCount(VulkanExtensions *supports)
         supports->KHR_portability_subset +
         supports->MSFT_layered_driver +
         supports->EXT_texture_compression_astc_hdr +
-        supports->KHR_device_fault);
+        supports->EXT_device_fault);
 }
 
 static inline void CreateDeviceExtensionArray(
@@ -11469,7 +11469,7 @@ static inline void CreateDeviceExtensionArray(
     CHECK(KHR_portability_subset)
     CHECK(MSFT_layered_driver)
     CHECK(EXT_texture_compression_astc_hdr)
-    CHECK(KHR_device_fault)
+    CHECK(EXT_device_fault)
 #undef CHECK
 }
 
@@ -12983,6 +12983,12 @@ static SDL_GPUDevice *VULKAN_CreateDevice(bool debugMode, bool preferLowPower, S
     if (verboseLogs) {
         SDL_LogInfo(SDL_LOG_CATEGORY_GPU, "SDL_GPU Driver: Vulkan");
     }
+
+    // Expose the raw VkDevice handle for backend-specific diagnostics (e.g. VK_EXT_device_fault)
+    SDL_SetPointerProperty(
+        renderer->props,
+        SDL_PROP_GPU_DEVICE_VULKAN_DEVICE_POINTER,
+        renderer->logicalDevice);
 
     // Record device name
     const char *deviceName = renderer->physicalDeviceProperties.properties.deviceName;
