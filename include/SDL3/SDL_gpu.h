@@ -2580,6 +2580,9 @@ extern SDL_DECLSPEC SDL_PropertiesID SDLCALL SDL_GetGPUDeviceProperties(SDL_GPUD
 #define SDL_PROP_GPU_DEVICE_DRIVER_NAME_STRING        "SDL.gpu.device.driver_name"
 #define SDL_PROP_GPU_DEVICE_DRIVER_VERSION_STRING     "SDL.gpu.device.driver_version"
 #define SDL_PROP_GPU_DEVICE_DRIVER_INFO_STRING        "SDL.gpu.device.driver_info"
+#define SDL_PROP_GPU_DEVICE_VENDOR_ID_NUMBER          "SDL.gpu.device.vendor_id"
+#define SDL_PROP_GPU_DEVICE_DEVICE_ID_NUMBER          "SDL.gpu.device.device_id"
+#define SDL_PROP_GPU_DEVICE_REVISION_NUMBER           "SDL.gpu.device.revision"
 #define SDL_PROP_GPU_DEVICE_VULKAN_DEVICE_POINTER    "SDL.gpu.device.vulkan.device"
 
 

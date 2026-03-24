@@ -9065,6 +9065,18 @@ static SDL_GPUDevice *D3D12_CreateDevice(bool debugMode, bool preferLowPower, SD
         renderer->props,
         SDL_PROP_GPU_DEVICE_NAME_STRING,
         deviceName);
+    SDL_SetNumberProperty(
+        renderer->props,
+        SDL_PROP_GPU_DEVICE_VENDOR_ID_NUMBER,
+        adapterDesc.VendorId);
+    SDL_SetNumberProperty(
+        renderer->props,
+        SDL_PROP_GPU_DEVICE_DEVICE_ID_NUMBER,
+        adapterDesc.DeviceId);
+    SDL_SetNumberProperty(
+        renderer->props,
+        SDL_PROP_GPU_DEVICE_REVISION_NUMBER,
+        adapterDesc.Revision);
     if (verboseLogs) {
         SDL_LogInfo(SDL_LOG_CATEGORY_GPU, "D3D12 Adapter: %s", deviceName);
     }

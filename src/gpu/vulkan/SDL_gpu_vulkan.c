@@ -12996,6 +12996,19 @@ static SDL_GPUDevice *VULKAN_CreateDevice(bool debugMode, bool preferLowPower, S
         renderer->props,
         SDL_PROP_GPU_DEVICE_NAME_STRING,
         deviceName);
+    SDL_SetNumberProperty(
+        renderer->props,
+        SDL_PROP_GPU_DEVICE_VENDOR_ID_NUMBER,
+        renderer->physicalDeviceProperties.properties.vendorID);
+    SDL_SetNumberProperty(
+        renderer->props,
+        SDL_PROP_GPU_DEVICE_DEVICE_ID_NUMBER,
+        renderer->physicalDeviceProperties.properties.deviceID);
+    // Vulkan core does not expose PCI revision; keep 0 for compatibility.
+    SDL_SetNumberProperty(
+        renderer->props,
+        SDL_PROP_GPU_DEVICE_REVISION_NUMBER,
+        0);
     if (verboseLogs) {
         SDL_LogInfo(SDL_LOG_CATEGORY_GPU, "Vulkan Device: %s", deviceName);
     }
