@@ -9071,11 +9071,23 @@ static SDL_GPUDevice *D3D12_CreateDevice(bool debugMode, bool preferLowPower, SD
         adapterDesc.VendorId);
     SDL_SetNumberProperty(
         renderer->props,
+        "SDL.gpu.device.stelumi.vendor_id",
+        adapterDesc.VendorId);
+    SDL_SetNumberProperty(
+        renderer->props,
         SDL_PROP_GPU_DEVICE_DEVICE_ID_NUMBER,
         adapterDesc.DeviceId);
     SDL_SetNumberProperty(
         renderer->props,
+        "SDL.gpu.device.stelumi.device_id",
+        adapterDesc.DeviceId);
+    SDL_SetNumberProperty(
+        renderer->props,
         SDL_PROP_GPU_DEVICE_REVISION_NUMBER,
+        adapterDesc.Revision);
+    SDL_SetNumberProperty(
+        renderer->props,
+        "SDL.gpu.device.stelumi.revision",
         adapterDesc.Revision);
     if (verboseLogs) {
         SDL_LogInfo(SDL_LOG_CATEGORY_GPU, "D3D12 Adapter: %s", deviceName);
