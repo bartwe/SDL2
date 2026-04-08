@@ -83,6 +83,7 @@ typedef struct RenderPass
 typedef struct CommandBufferCommonHeader
 {
     SDL_GPUDevice *device;
+    SDL_PropertiesID props;
 
     RenderPass render_pass;
     ComputePass compute_pass;

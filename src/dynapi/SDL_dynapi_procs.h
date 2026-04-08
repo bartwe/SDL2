@@ -334,6 +334,7 @@ SDL_DYNAPI_PROC(SDL_DisplayMode**,SDL_GetFullscreenDisplayModes,(SDL_DisplayID a
 SDL_DYNAPI_PROC(bool,SDL_GetGDKDefaultUser,(XUserHandle *a),(a),return)
 SDL_DYNAPI_PROC(bool,SDL_GetGDKTaskQueue,(XTaskQueueHandle *a),(a),return)
 SDL_DYNAPI_PROC(const char*,SDL_GetGPUDeviceDriver,(SDL_GPUDevice *a),(a),return)
+SDL_DYNAPI_PROC(SDL_PropertiesID,SDL_GetGPUCommandBufferProperties,(SDL_GPUCommandBuffer *a),(a),return)
 SDL_DYNAPI_PROC(const char*,SDL_GetGPUDriver,(int a),(a),return)
 SDL_DYNAPI_PROC(SDL_GPUShaderFormat,SDL_GetGPUShaderFormats,(SDL_GPUDevice *a),(a),return)
 SDL_DYNAPI_PROC(SDL_GPUTextureFormat,SDL_GetGPUSwapchainTextureFormat,(SDL_GPUDevice *a, SDL_Window *b),(a,b),return)

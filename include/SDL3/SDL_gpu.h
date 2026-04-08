@@ -2584,6 +2584,9 @@ extern SDL_DECLSPEC SDL_PropertiesID SDLCALL SDL_GetGPUDeviceProperties(SDL_GPUD
 #define SDL_PROP_GPU_DEVICE_DEVICE_ID_NUMBER          "SDL.gpu.device.device_id"
 #define SDL_PROP_GPU_DEVICE_REVISION_NUMBER           "SDL.gpu.device.revision"
 #define SDL_PROP_GPU_DEVICE_VULKAN_DEVICE_POINTER    "SDL.gpu.device.vulkan.device"
+#define SDL_PROP_GPU_DEVICE_D3D12_DEVICE_POINTER     "SDL.gpu.device.d3d12.device"
+#define SDL_PROP_GPU_DEVICE_D3D12_COMMAND_QUEUE_POINTER "SDL.gpu.device.d3d12.command_queue"
+#define SDL_PROP_GPU_COMMAND_BUFFER_D3D12_COMMAND_LIST_POINTER "SDL.gpu.command_buffer.d3d12.command_list"
 
 
 /* State Creation */
@@ -3165,6 +3168,20 @@ extern SDL_DECLSPEC void SDLCALL SDL_ReleaseGPUGraphicsPipeline(
  */
 extern SDL_DECLSPEC SDL_GPUCommandBuffer * SDLCALL SDL_AcquireGPUCommandBuffer(
     SDL_GPUDevice *device);
+
+/**
+ * Gets the properties associated with a command buffer.
+ *
+ * \param command_buffer a command buffer.
+ * \returns a valid property ID on success or 0 on failure; call
+ *          SDL_GetError() for more information.
+ *
+ * \threadsafety It is safe to call this function from any thread.
+ *
+ * \since This function is available since SDL 3.4.0.
+ */
+extern SDL_DECLSPEC SDL_PropertiesID SDLCALL SDL_GetGPUCommandBufferProperties(
+    SDL_GPUCommandBuffer *command_buffer);
 
 /* Uniform Data */
 

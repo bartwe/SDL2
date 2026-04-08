@@ -1249,6 +1249,7 @@ SDL3_0.0.0 {
     SDL_SetRenderTextureAddressMode;
     SDL_GetRenderTextureAddressMode;
     SDL_GetGPUDeviceProperties;
+    SDL_GetGPUCommandBufferProperties;
     SDL_CreateGPURenderer;
     SDL_PutAudioStreamPlanarData;
     SDL_GetEventDescription;

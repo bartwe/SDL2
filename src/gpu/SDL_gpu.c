@@ -792,6 +792,16 @@ SDL_PropertiesID SDL_GetGPUDeviceProperties(SDL_GPUDevice *device)
     return device->GetDeviceProperties(device);
 }
 
+SDL_PropertiesID SDL_GetGPUCommandBufferProperties(SDL_GPUCommandBuffer *command_buffer)
+{
+    CHECK_PARAM(command_buffer == NULL) {
+        SDL_InvalidParamError("command_buffer");
+        return 0;
+    }
+
+    return ((CommandBufferCommonHeader *)command_buffer)->props;
+}
+
 Uint32 SDL_GPUTextureFormatTexelBlockSize(
     SDL_GPUTextureFormat format)
 {
