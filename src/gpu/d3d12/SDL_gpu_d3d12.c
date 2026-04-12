@@ -32,6 +32,31 @@
 #define HAVE_IDXGIINFOQUEUE
 #endif
 
+#ifndef SDL_PROP_GPU_SHADER_CREATE_STELUMI_GRAPHICS_SAMPLED_TEXTURE_SLOTS_STRING
+#define SDL_PROP_GPU_SHADER_CREATE_STELUMI_GRAPHICS_SAMPLED_TEXTURE_SLOTS_STRING "SDL.gpu.shader.create.stelumi.graphics.sampled_texture_slots"
+#endif
+#ifndef SDL_PROP_GPU_SHADER_CREATE_STELUMI_GRAPHICS_STORAGE_TEXTURE_SLOTS_STRING
+#define SDL_PROP_GPU_SHADER_CREATE_STELUMI_GRAPHICS_STORAGE_TEXTURE_SLOTS_STRING "SDL.gpu.shader.create.stelumi.graphics.storage_texture_slots"
+#endif
+#ifndef SDL_PROP_GPU_SHADER_CREATE_STELUMI_GRAPHICS_STORAGE_BUFFER_SLOTS_STRING
+#define SDL_PROP_GPU_SHADER_CREATE_STELUMI_GRAPHICS_STORAGE_BUFFER_SLOTS_STRING "SDL.gpu.shader.create.stelumi.graphics.storage_buffer_slots"
+#endif
+#ifndef SDL_PROP_GPU_COMPUTEPIPELINE_CREATE_STELUMI_SAMPLED_TEXTURE_SLOTS_STRING
+#define SDL_PROP_GPU_COMPUTEPIPELINE_CREATE_STELUMI_SAMPLED_TEXTURE_SLOTS_STRING "SDL.gpu.computepipeline.create.stelumi.sampled_texture_slots"
+#endif
+#ifndef SDL_PROP_GPU_COMPUTEPIPELINE_CREATE_STELUMI_READONLY_STORAGE_TEXTURE_SLOTS_STRING
+#define SDL_PROP_GPU_COMPUTEPIPELINE_CREATE_STELUMI_READONLY_STORAGE_TEXTURE_SLOTS_STRING "SDL.gpu.computepipeline.create.stelumi.readonly_storage_texture_slots"
+#endif
+#ifndef SDL_PROP_GPU_COMPUTEPIPELINE_CREATE_STELUMI_READONLY_STORAGE_BUFFER_SLOTS_STRING
+#define SDL_PROP_GPU_COMPUTEPIPELINE_CREATE_STELUMI_READONLY_STORAGE_BUFFER_SLOTS_STRING "SDL.gpu.computepipeline.create.stelumi.readonly_storage_buffer_slots"
+#endif
+#ifndef SDL_PROP_GPU_COMPUTEPIPELINE_CREATE_STELUMI_READWRITE_STORAGE_TEXTURE_SLOTS_STRING
+#define SDL_PROP_GPU_COMPUTEPIPELINE_CREATE_STELUMI_READWRITE_STORAGE_TEXTURE_SLOTS_STRING "SDL.gpu.computepipeline.create.stelumi.readwrite_storage_texture_slots"
+#endif
+#ifndef SDL_PROP_GPU_COMPUTEPIPELINE_CREATE_STELUMI_READWRITE_STORAGE_BUFFER_SLOTS_STRING
+#define SDL_PROP_GPU_COMPUTEPIPELINE_CREATE_STELUMI_READWRITE_STORAGE_BUFFER_SLOTS_STRING "SDL.gpu.computepipeline.create.stelumi.readwrite_storage_buffer_slots"
+#endif
+
 // Built-in shaders, compiled with compile_shaders.bat
 
 #define g_FullscreenVert    D3D12_FullscreenVert
@@ -1114,7 +1139,329 @@ struct D3D12Shader
     Uint32 numUniformBuffers;
     Uint32 numStorageBuffers;
     Uint32 numStorageTextures;
+    Uint8 sampledTextureSlots[MAX_TEXTURE_SAMPLERS_PER_STAGE];
+    Uint8 storageBufferSlots[MAX_STORAGE_BUFFERS_PER_STAGE];
+    Uint8 storageTextureSlots[MAX_STORAGE_TEXTURES_PER_STAGE];
 };
+
+static void D3D12_INTERNAL_SetDefaultGraphicsBindingSlots(D3D12Shader *shader)
+{
+    Uint32 i;
+
+    for (i = 0; i < shader->num_samplers; i += 1) {
+        shader->sampledTextureSlots[i] = (Uint8)i;
+    }
+
+    for (i = 0; i < shader->numStorageTextures; i += 1) {
+        shader->storageTextureSlots[i] = (Uint8)(shader->num_samplers + i);
+    }
+
+    for (i = 0; i < shader->numStorageBuffers; i += 1) {
+        shader->storageBufferSlots[i] = (Uint8)(shader->num_samplers + shader->numStorageTextures + i);
+    }
+}
+
+static bool D3D12_INTERNAL_ParseBindingSlots(
+    const char *slotsText,
+    Uint32 expectedCount,
+    Uint8 *destinationSlots)
+{
+    Uint32 parsedCount = 0;
+    const char *cursor = slotsText;
+
+    if (expectedCount == 0) {
+        return true;
+    }
+
+    if (slotsText == NULL || slotsText[0] == '\0' || destinationSlots == NULL) {
+        return false;
+    }
+
+    while (cursor[0] != '\0') {
+        unsigned long slotValue;
+        char *end = NULL;
+
+        if (parsedCount >= expectedCount) {
+            return false;
+        }
+
+        slotValue = SDL_strtoul(cursor, &end, 10);
+        if (end == cursor || slotValue > 255) {
+            return false;
+        }
+
+        destinationSlots[parsedCount++] = (Uint8)slotValue;
+        if (end[0] == '\0') {
+            break;
+        }
+        if (end[0] != ',') {
+            return false;
+        }
+        cursor = end + 1;
+    }
+
+    return parsedCount == expectedCount;
+}
+
+static bool D3D12_INTERNAL_LoadGraphicsBindingSlotsFromProps(
+    const SDL_GPUShaderCreateInfo *createinfo,
+    D3D12Shader *shader)
+{
+    const char *sampledTextureSlots;
+    const char *storageTextureSlots;
+    const char *storageBufferSlots;
+
+    if (shader == NULL) {
+        return false;
+    }
+
+    D3D12_INTERNAL_SetDefaultGraphicsBindingSlots(shader);
+
+    if (createinfo == NULL || createinfo->props == 0) {
+        return true;
+    }
+
+    sampledTextureSlots = SDL_GetStringProperty(
+        createinfo->props,
+        SDL_PROP_GPU_SHADER_CREATE_STELUMI_GRAPHICS_SAMPLED_TEXTURE_SLOTS_STRING,
+        NULL);
+    storageTextureSlots = SDL_GetStringProperty(
+        createinfo->props,
+        SDL_PROP_GPU_SHADER_CREATE_STELUMI_GRAPHICS_STORAGE_TEXTURE_SLOTS_STRING,
+        NULL);
+    storageBufferSlots = SDL_GetStringProperty(
+        createinfo->props,
+        SDL_PROP_GPU_SHADER_CREATE_STELUMI_GRAPHICS_STORAGE_BUFFER_SLOTS_STRING,
+        NULL);
+
+    if (sampledTextureSlots != NULL &&
+        !D3D12_INTERNAL_ParseBindingSlots(
+            sampledTextureSlots,
+            shader->num_samplers,
+            shader->sampledTextureSlots)) {
+        SDL_SetError("Invalid sampled texture slot metadata for D3D12 graphics shader.");
+        return false;
+    }
+
+    if (storageTextureSlots != NULL &&
+        !D3D12_INTERNAL_ParseBindingSlots(
+            storageTextureSlots,
+            shader->numStorageTextures,
+            shader->storageTextureSlots)) {
+        SDL_SetError("Invalid storage texture slot metadata for D3D12 graphics shader.");
+        return false;
+    }
+
+    if (storageBufferSlots != NULL &&
+        !D3D12_INTERNAL_ParseBindingSlots(
+            storageBufferSlots,
+            shader->numStorageBuffers,
+            shader->storageBufferSlots)) {
+        SDL_SetError("Invalid storage buffer slot metadata for D3D12 graphics shader.");
+        return false;
+    }
+
+    return true;
+}
+
+static void D3D12_INTERNAL_SetDefaultComputeBindingSlots(
+    const SDL_GPUComputePipelineCreateInfo *createInfo,
+    Uint8 *sampledTextureSlots,
+    Uint8 *readOnlyStorageTextureSlots,
+    Uint8 *readOnlyStorageBufferSlots,
+    Uint8 *readWriteStorageTextureSlots,
+    Uint8 *readWriteStorageBufferSlots)
+{
+    Uint32 i;
+
+    if (createInfo == NULL) {
+        return;
+    }
+
+    for (i = 0; i < createInfo->num_samplers; i += 1) {
+        sampledTextureSlots[i] = (Uint8)i;
+    }
+
+    for (i = 0; i < createInfo->num_readonly_storage_textures; i += 1) {
+        readOnlyStorageTextureSlots[i] = (Uint8)(createInfo->num_samplers + i);
+    }
+
+    for (i = 0; i < createInfo->num_readonly_storage_buffers; i += 1) {
+        readOnlyStorageBufferSlots[i] = (Uint8)(createInfo->num_samplers + createInfo->num_readonly_storage_textures + i);
+    }
+
+    for (i = 0; i < createInfo->num_readwrite_storage_textures; i += 1) {
+        readWriteStorageTextureSlots[i] = (Uint8)i;
+    }
+
+    for (i = 0; i < createInfo->num_readwrite_storage_buffers; i += 1) {
+        readWriteStorageBufferSlots[i] = (Uint8)(createInfo->num_readwrite_storage_textures + i);
+    }
+}
+
+static bool D3D12_INTERNAL_LoadComputeBindingSlotsFromProps(
+    const SDL_GPUComputePipelineCreateInfo *createInfo,
+    Uint8 *sampledTextureSlots,
+    Uint8 *readOnlyStorageTextureSlots,
+    Uint8 *readOnlyStorageBufferSlots,
+    Uint8 *readWriteStorageTextureSlots,
+    Uint8 *readWriteStorageBufferSlots)
+{
+    const char *sampledTextureSlotsText;
+    const char *readOnlyStorageTextureSlotsText;
+    const char *readOnlyStorageBufferSlotsText;
+    const char *readWriteStorageTextureSlotsText;
+    const char *readWriteStorageBufferSlotsText;
+
+    if (createInfo == NULL) {
+        return false;
+    }
+
+    D3D12_INTERNAL_SetDefaultComputeBindingSlots(
+        createInfo,
+        sampledTextureSlots,
+        readOnlyStorageTextureSlots,
+        readOnlyStorageBufferSlots,
+        readWriteStorageTextureSlots,
+        readWriteStorageBufferSlots);
+
+    if (createInfo->props == 0) {
+        return true;
+    }
+
+    sampledTextureSlotsText = SDL_GetStringProperty(
+        createInfo->props,
+        SDL_PROP_GPU_COMPUTEPIPELINE_CREATE_STELUMI_SAMPLED_TEXTURE_SLOTS_STRING,
+        NULL);
+    readOnlyStorageTextureSlotsText = SDL_GetStringProperty(
+        createInfo->props,
+        SDL_PROP_GPU_COMPUTEPIPELINE_CREATE_STELUMI_READONLY_STORAGE_TEXTURE_SLOTS_STRING,
+        NULL);
+    readOnlyStorageBufferSlotsText = SDL_GetStringProperty(
+        createInfo->props,
+        SDL_PROP_GPU_COMPUTEPIPELINE_CREATE_STELUMI_READONLY_STORAGE_BUFFER_SLOTS_STRING,
+        NULL);
+    readWriteStorageTextureSlotsText = SDL_GetStringProperty(
+        createInfo->props,
+        SDL_PROP_GPU_COMPUTEPIPELINE_CREATE_STELUMI_READWRITE_STORAGE_TEXTURE_SLOTS_STRING,
+        NULL);
+    readWriteStorageBufferSlotsText = SDL_GetStringProperty(
+        createInfo->props,
+        SDL_PROP_GPU_COMPUTEPIPELINE_CREATE_STELUMI_READWRITE_STORAGE_BUFFER_SLOTS_STRING,
+        NULL);
+
+    if (sampledTextureSlotsText != NULL &&
+        !D3D12_INTERNAL_ParseBindingSlots(
+            sampledTextureSlotsText,
+            createInfo->num_samplers,
+            sampledTextureSlots)) {
+        SDL_SetError("Invalid sampled texture slot metadata for D3D12 compute pipeline.");
+        return false;
+    }
+
+    if (readOnlyStorageTextureSlotsText != NULL &&
+        !D3D12_INTERNAL_ParseBindingSlots(
+            readOnlyStorageTextureSlotsText,
+            createInfo->num_readonly_storage_textures,
+            readOnlyStorageTextureSlots)) {
+        SDL_SetError("Invalid readonly storage texture slot metadata for D3D12 compute pipeline.");
+        return false;
+    }
+
+    if (readOnlyStorageBufferSlotsText != NULL &&
+        !D3D12_INTERNAL_ParseBindingSlots(
+            readOnlyStorageBufferSlotsText,
+            createInfo->num_readonly_storage_buffers,
+            readOnlyStorageBufferSlots)) {
+        SDL_SetError("Invalid readonly storage buffer slot metadata for D3D12 compute pipeline.");
+        return false;
+    }
+
+    if (readWriteStorageTextureSlotsText != NULL &&
+        !D3D12_INTERNAL_ParseBindingSlots(
+            readWriteStorageTextureSlotsText,
+            createInfo->num_readwrite_storage_textures,
+            readWriteStorageTextureSlots)) {
+        SDL_SetError("Invalid read-write storage texture slot metadata for D3D12 compute pipeline.");
+        return false;
+    }
+
+    if (readWriteStorageBufferSlotsText != NULL &&
+        !D3D12_INTERNAL_ParseBindingSlots(
+            readWriteStorageBufferSlotsText,
+            createInfo->num_readwrite_storage_buffers,
+            readWriteStorageBufferSlots)) {
+        SDL_SetError("Invalid read-write storage buffer slot metadata for D3D12 compute pipeline.");
+        return false;
+    }
+
+    return true;
+}
+
+static bool D3D12_INTERNAL_AddDescriptorTableForSortedSlots(
+    D3D12_ROOT_PARAMETER *rootParameters,
+    Uint32 *parameterCount,
+    D3D12_DESCRIPTOR_RANGE *descriptorRanges,
+    Uint32 *rangeCount,
+    D3D12_DESCRIPTOR_RANGE_TYPE rangeType,
+    UINT registerSpace,
+    D3D12_SHADER_VISIBILITY visibility,
+    const Uint8 *slots,
+    Uint32 slotCount,
+    Sint32 *rootIndex)
+{
+    D3D12_ROOT_PARAMETER rootParameter;
+    Uint32 firstRangeIndex;
+    Uint32 i;
+
+    if (slotCount == 0) {
+        if (rootIndex != NULL) {
+            *rootIndex = -1;
+        }
+        return true;
+    }
+
+    if (rootParameters == NULL || parameterCount == NULL || descriptorRanges == NULL || rangeCount == NULL || slots == NULL) {
+        return false;
+    }
+
+    firstRangeIndex = *rangeCount;
+    for (i = 0; i < slotCount; i += 1) {
+        if (i > 0 && slots[i] <= slots[i - 1]) {
+            SDL_SetError("Shader binding slots must be strictly increasing for D3D12 descriptor tables.");
+            return false;
+        }
+
+        if (*rangeCount >= MAX_ROOT_SIGNATURE_PARAMETERS) {
+            SDL_SetError("Shader binding metadata exceeded D3D12 root signature descriptor range capacity.");
+            return false;
+        }
+
+        descriptorRanges[*rangeCount].RangeType = rangeType;
+        descriptorRanges[*rangeCount].NumDescriptors = 1;
+        descriptorRanges[*rangeCount].BaseShaderRegister = slots[i];
+        descriptorRanges[*rangeCount].RegisterSpace = registerSpace;
+        descriptorRanges[*rangeCount].OffsetInDescriptorsFromTableStart = D3D12_DESCRIPTOR_RANGE_OFFSET_APPEND;
+        *rangeCount += 1;
+    }
+
+    if (*parameterCount >= MAX_ROOT_SIGNATURE_PARAMETERS) {
+        SDL_SetError("Shader binding metadata exceeded D3D12 root signature parameter capacity.");
+        return false;
+    }
+
+    SDL_zero(rootParameter);
+    rootParameter.ParameterType = D3D12_ROOT_PARAMETER_TYPE_DESCRIPTOR_TABLE;
+    rootParameter.DescriptorTable.NumDescriptorRanges = *rangeCount - firstRangeIndex;
+    rootParameter.DescriptorTable.pDescriptorRanges = &descriptorRanges[firstRangeIndex];
+    rootParameter.ShaderVisibility = visibility;
+    rootParameters[*parameterCount] = rootParameter;
+    if (rootIndex != NULL) {
+        *rootIndex = (Sint32)*parameterCount;
+    }
+    *parameterCount += 1;
+    return true;
+}
 
 typedef struct D3D12GraphicsRootSignature
 {
@@ -1285,6 +1632,45 @@ static void D3D12_INTERNAL_SetError(
     // Buffer for text, ensure space for \0 terminator after buffer
     char wszMsgBuff[MAX_ERROR_LEN + 1];
     DWORD dwChars; // Number of chars returned.
+
+    if (renderer != NULL && renderer->debug_mode && renderer->device != NULL) {
+        ID3D12InfoQueue *infoQueue = NULL;
+        HRESULT infoQueueResult = ID3D12Device_QueryInterface(
+            renderer->device,
+            D3D_GUID(D3D_IID_ID3D12InfoQueue),
+            (void **)&infoQueue);
+        if (SUCCEEDED(infoQueueResult) && infoQueue != NULL) {
+            UINT64 messageCount = ID3D12InfoQueue_GetNumStoredMessagesAllowedByRetrievalFilter(infoQueue);
+            UINT64 firstMessageIndex = messageCount > 8 ? (messageCount - 8) : 0;
+
+            for (UINT64 i = firstMessageIndex; i < messageCount; i += 1) {
+                SIZE_T messageLength = 0;
+                if (SUCCEEDED(ID3D12InfoQueue_GetMessage(infoQueue, i, NULL, &messageLength)) && messageLength > 0) {
+                    D3D12_MESSAGE *message = (D3D12_MESSAGE *)SDL_malloc(messageLength);
+                    if (message == NULL) {
+                        SDL_LogWarn(SDL_LOG_CATEGORY_GPU, "D3D12 INFOQUEUE: Failed to allocate message buffer while reporting '%s'.", msg);
+                        break;
+                    }
+
+                    if (SUCCEEDED(ID3D12InfoQueue_GetMessage(infoQueue, i, message, &messageLength)) &&
+                        message->pDescription != NULL) {
+                        SDL_LogError(
+                            SDL_LOG_CATEGORY_GPU,
+                            "D3D12 INFOQUEUE: %s [category=%u severity=%u id=%u]",
+                            message->pDescription,
+                            (unsigned int)message->Category,
+                            (unsigned int)message->Severity,
+                            (unsigned int)message->ID);
+                    }
+
+                    SDL_free(message);
+                }
+            }
+
+            ID3D12InfoQueue_ClearStoredMessages(infoQueue);
+            ID3D12InfoQueue_Release(infoQueue);
+        }
+    }
 
     if (res == DXGI_ERROR_DEVICE_REMOVED) {
         if (renderer->device) {
@@ -2507,61 +2893,54 @@ static D3D12GraphicsRootSignature *D3D12_INTERNAL_CreateGraphicsRootSignature(
         d3d12GraphicsRootSignature->vertexSamplerRootIndex = parameterCount;
         rangeCount += 1;
         parameterCount += 1;
-
-        descriptorRange.RangeType = D3D12_DESCRIPTOR_RANGE_TYPE_SRV;
-        descriptorRange.NumDescriptors = vertexShader->num_samplers;
-        descriptorRange.BaseShaderRegister = 0;
-        descriptorRange.RegisterSpace = 0;
-        descriptorRange.OffsetInDescriptorsFromTableStart = D3D12_DESCRIPTOR_RANGE_OFFSET_APPEND;
-        descriptorRanges[rangeCount] = descriptorRange;
-
-        rootParameter.ParameterType = D3D12_ROOT_PARAMETER_TYPE_DESCRIPTOR_TABLE;
-        rootParameter.DescriptorTable.NumDescriptorRanges = 1;
-        rootParameter.DescriptorTable.pDescriptorRanges = &descriptorRanges[rangeCount];
-        rootParameter.ShaderVisibility = D3D12_SHADER_VISIBILITY_VERTEX;
-        rootParameters[parameterCount] = rootParameter;
-        d3d12GraphicsRootSignature->vertexSamplerTextureRootIndex = parameterCount;
-        rangeCount += 1;
-        parameterCount += 1;
+        if (!D3D12_INTERNAL_AddDescriptorTableForSortedSlots(
+                rootParameters,
+                &parameterCount,
+                descriptorRanges,
+                &rangeCount,
+                D3D12_DESCRIPTOR_RANGE_TYPE_SRV,
+                0,
+                D3D12_SHADER_VISIBILITY_VERTEX,
+                vertexShader->sampledTextureSlots,
+                vertexShader->num_samplers,
+                &d3d12GraphicsRootSignature->vertexSamplerTextureRootIndex)) {
+            D3D12_INTERNAL_DestroyGraphicsRootSignature(d3d12GraphicsRootSignature);
+            return NULL;
+        }
     }
 
     if (vertexShader->numStorageTextures) {
-        // Vertex storage textures
-        descriptorRange.RangeType = D3D12_DESCRIPTOR_RANGE_TYPE_SRV;
-        descriptorRange.NumDescriptors = vertexShader->numStorageTextures;
-        descriptorRange.BaseShaderRegister = vertexShader->num_samplers;
-        descriptorRange.RegisterSpace = 0;
-        descriptorRange.OffsetInDescriptorsFromTableStart = D3D12_DESCRIPTOR_RANGE_OFFSET_APPEND;
-        descriptorRanges[rangeCount] = descriptorRange;
-
-        rootParameter.ParameterType = D3D12_ROOT_PARAMETER_TYPE_DESCRIPTOR_TABLE;
-        rootParameter.DescriptorTable.NumDescriptorRanges = 1;
-        rootParameter.DescriptorTable.pDescriptorRanges = &descriptorRanges[rangeCount];
-        rootParameter.ShaderVisibility = D3D12_SHADER_VISIBILITY_VERTEX;
-        rootParameters[parameterCount] = rootParameter;
-        d3d12GraphicsRootSignature->vertexStorageTextureRootIndex = parameterCount;
-        rangeCount += 1;
-        parameterCount += 1;
+        if (!D3D12_INTERNAL_AddDescriptorTableForSortedSlots(
+                rootParameters,
+                &parameterCount,
+                descriptorRanges,
+                &rangeCount,
+                D3D12_DESCRIPTOR_RANGE_TYPE_SRV,
+                0,
+                D3D12_SHADER_VISIBILITY_VERTEX,
+                vertexShader->storageTextureSlots,
+                vertexShader->numStorageTextures,
+                &d3d12GraphicsRootSignature->vertexStorageTextureRootIndex)) {
+            D3D12_INTERNAL_DestroyGraphicsRootSignature(d3d12GraphicsRootSignature);
+            return NULL;
+        }
     }
 
     if (vertexShader->numStorageBuffers) {
-
-        // Vertex storage buffers
-        descriptorRange.RangeType = D3D12_DESCRIPTOR_RANGE_TYPE_SRV;
-        descriptorRange.NumDescriptors = vertexShader->numStorageBuffers;
-        descriptorRange.BaseShaderRegister = vertexShader->num_samplers + vertexShader->numStorageTextures;
-        descriptorRange.RegisterSpace = 0;
-        descriptorRange.OffsetInDescriptorsFromTableStart = D3D12_DESCRIPTOR_RANGE_OFFSET_APPEND;
-        descriptorRanges[rangeCount] = descriptorRange;
-
-        rootParameter.ParameterType = D3D12_ROOT_PARAMETER_TYPE_DESCRIPTOR_TABLE;
-        rootParameter.DescriptorTable.NumDescriptorRanges = 1;
-        rootParameter.DescriptorTable.pDescriptorRanges = &descriptorRanges[rangeCount];
-        rootParameter.ShaderVisibility = D3D12_SHADER_VISIBILITY_VERTEX;
-        rootParameters[parameterCount] = rootParameter;
-        d3d12GraphicsRootSignature->vertexStorageBufferRootIndex = parameterCount;
-        rangeCount += 1;
-        parameterCount += 1;
+        if (!D3D12_INTERNAL_AddDescriptorTableForSortedSlots(
+                rootParameters,
+                &parameterCount,
+                descriptorRanges,
+                &rangeCount,
+                D3D12_DESCRIPTOR_RANGE_TYPE_SRV,
+                0,
+                D3D12_SHADER_VISIBILITY_VERTEX,
+                vertexShader->storageBufferSlots,
+                vertexShader->numStorageBuffers,
+                &d3d12GraphicsRootSignature->vertexStorageBufferRootIndex)) {
+            D3D12_INTERNAL_DestroyGraphicsRootSignature(d3d12GraphicsRootSignature);
+            return NULL;
+        }
     }
 
     // Vertex Uniforms
@@ -2592,60 +2971,54 @@ static D3D12GraphicsRootSignature *D3D12_INTERNAL_CreateGraphicsRootSignature(
         d3d12GraphicsRootSignature->fragmentSamplerRootIndex = parameterCount;
         rangeCount += 1;
         parameterCount += 1;
-
-        descriptorRange.RangeType = D3D12_DESCRIPTOR_RANGE_TYPE_SRV;
-        descriptorRange.NumDescriptors = fragmentShader->num_samplers;
-        descriptorRange.BaseShaderRegister = 0;
-        descriptorRange.RegisterSpace = 2;
-        descriptorRange.OffsetInDescriptorsFromTableStart = D3D12_DESCRIPTOR_RANGE_OFFSET_APPEND;
-        descriptorRanges[rangeCount] = descriptorRange;
-
-        rootParameter.ParameterType = D3D12_ROOT_PARAMETER_TYPE_DESCRIPTOR_TABLE;
-        rootParameter.DescriptorTable.NumDescriptorRanges = 1;
-        rootParameter.DescriptorTable.pDescriptorRanges = &descriptorRanges[rangeCount];
-        rootParameter.ShaderVisibility = D3D12_SHADER_VISIBILITY_PIXEL;
-        rootParameters[parameterCount] = rootParameter;
-        d3d12GraphicsRootSignature->fragmentSamplerTextureRootIndex = parameterCount;
-        rangeCount += 1;
-        parameterCount += 1;
+        if (!D3D12_INTERNAL_AddDescriptorTableForSortedSlots(
+                rootParameters,
+                &parameterCount,
+                descriptorRanges,
+                &rangeCount,
+                D3D12_DESCRIPTOR_RANGE_TYPE_SRV,
+                2,
+                D3D12_SHADER_VISIBILITY_PIXEL,
+                fragmentShader->sampledTextureSlots,
+                fragmentShader->num_samplers,
+                &d3d12GraphicsRootSignature->fragmentSamplerTextureRootIndex)) {
+            D3D12_INTERNAL_DestroyGraphicsRootSignature(d3d12GraphicsRootSignature);
+            return NULL;
+        }
     }
 
     if (fragmentShader->numStorageTextures) {
-        // Fragment Storage Textures
-        descriptorRange.RangeType = D3D12_DESCRIPTOR_RANGE_TYPE_SRV;
-        descriptorRange.NumDescriptors = fragmentShader->numStorageTextures;
-        descriptorRange.BaseShaderRegister = fragmentShader->num_samplers;
-        descriptorRange.RegisterSpace = 2;
-        descriptorRange.OffsetInDescriptorsFromTableStart = D3D12_DESCRIPTOR_RANGE_OFFSET_APPEND;
-        descriptorRanges[rangeCount] = descriptorRange;
-
-        rootParameter.ParameterType = D3D12_ROOT_PARAMETER_TYPE_DESCRIPTOR_TABLE;
-        rootParameter.DescriptorTable.NumDescriptorRanges = 1;
-        rootParameter.DescriptorTable.pDescriptorRanges = &descriptorRanges[rangeCount];
-        rootParameter.ShaderVisibility = D3D12_SHADER_VISIBILITY_PIXEL;
-        rootParameters[parameterCount] = rootParameter;
-        d3d12GraphicsRootSignature->fragmentStorageTextureRootIndex = parameterCount;
-        rangeCount += 1;
-        parameterCount += 1;
+        if (!D3D12_INTERNAL_AddDescriptorTableForSortedSlots(
+                rootParameters,
+                &parameterCount,
+                descriptorRanges,
+                &rangeCount,
+                D3D12_DESCRIPTOR_RANGE_TYPE_SRV,
+                2,
+                D3D12_SHADER_VISIBILITY_PIXEL,
+                fragmentShader->storageTextureSlots,
+                fragmentShader->numStorageTextures,
+                &d3d12GraphicsRootSignature->fragmentStorageTextureRootIndex)) {
+            D3D12_INTERNAL_DestroyGraphicsRootSignature(d3d12GraphicsRootSignature);
+            return NULL;
+        }
     }
 
     if (fragmentShader->numStorageBuffers) {
-        // Fragment Storage Buffers
-        descriptorRange.RangeType = D3D12_DESCRIPTOR_RANGE_TYPE_SRV;
-        descriptorRange.NumDescriptors = fragmentShader->numStorageBuffers;
-        descriptorRange.BaseShaderRegister = fragmentShader->num_samplers + fragmentShader->numStorageTextures;
-        descriptorRange.RegisterSpace = 2;
-        descriptorRange.OffsetInDescriptorsFromTableStart = D3D12_DESCRIPTOR_RANGE_OFFSET_APPEND;
-        descriptorRanges[rangeCount] = descriptorRange;
-
-        rootParameter.ParameterType = D3D12_ROOT_PARAMETER_TYPE_DESCRIPTOR_TABLE;
-        rootParameter.DescriptorTable.NumDescriptorRanges = 1;
-        rootParameter.DescriptorTable.pDescriptorRanges = &descriptorRanges[rangeCount];
-        rootParameter.ShaderVisibility = D3D12_SHADER_VISIBILITY_PIXEL;
-        rootParameters[parameterCount] = rootParameter;
-        d3d12GraphicsRootSignature->fragmentStorageBufferRootIndex = parameterCount;
-        rangeCount += 1;
-        parameterCount += 1;
+        if (!D3D12_INTERNAL_AddDescriptorTableForSortedSlots(
+                rootParameters,
+                &parameterCount,
+                descriptorRanges,
+                &rangeCount,
+                D3D12_DESCRIPTOR_RANGE_TYPE_SRV,
+                2,
+                D3D12_SHADER_VISIBILITY_PIXEL,
+                fragmentShader->storageBufferSlots,
+                fragmentShader->numStorageBuffers,
+                &d3d12GraphicsRootSignature->fragmentStorageBufferRootIndex)) {
+            D3D12_INTERNAL_DestroyGraphicsRootSignature(d3d12GraphicsRootSignature);
+            return NULL;
+        }
     }
 
     // Fragment Uniforms
@@ -2754,6 +3127,11 @@ static D3D12ComputeRootSignature *D3D12_INTERNAL_CreateComputeRootSignature(
     // FIXME: I think the max can be smaller...
     D3D12_ROOT_PARAMETER rootParameters[MAX_ROOT_SIGNATURE_PARAMETERS];
     D3D12_DESCRIPTOR_RANGE descriptorRanges[MAX_ROOT_SIGNATURE_PARAMETERS];
+    Uint8 sampledTextureSlots[MAX_TEXTURE_SAMPLERS_PER_STAGE];
+    Uint8 readOnlyStorageTextureSlots[MAX_STORAGE_TEXTURES_PER_STAGE];
+    Uint8 readOnlyStorageBufferSlots[MAX_STORAGE_BUFFERS_PER_STAGE];
+    Uint8 readWriteStorageTextureSlots[MAX_COMPUTE_WRITE_TEXTURES];
+    Uint8 readWriteStorageBufferSlots[MAX_COMPUTE_WRITE_BUFFERS];
     Uint32 parameterCount = 0;
     Uint32 rangeCount = 0;
     D3D12_DESCRIPTOR_RANGE descriptorRange;
@@ -2766,6 +3144,11 @@ static D3D12ComputeRootSignature *D3D12_INTERNAL_CreateComputeRootSignature(
 
     SDL_zeroa(rootParameters);
     SDL_zeroa(descriptorRanges);
+    SDL_zeroa(sampledTextureSlots);
+    SDL_zeroa(readOnlyStorageTextureSlots);
+    SDL_zeroa(readOnlyStorageBufferSlots);
+    SDL_zeroa(readWriteStorageTextureSlots);
+    SDL_zeroa(readWriteStorageBufferSlots);
     SDL_zero(rootParameter);
 
     d3d12ComputeRootSignature->samplerRootIndex = -1;
@@ -2777,6 +3160,17 @@ static D3D12ComputeRootSignature *D3D12_INTERNAL_CreateComputeRootSignature(
 
     for (Uint32 i = 0; i < MAX_UNIFORM_BUFFERS_PER_STAGE; i += 1) {
         d3d12ComputeRootSignature->uniformBufferRootIndex[i] = -1;
+    }
+
+    if (!D3D12_INTERNAL_LoadComputeBindingSlotsFromProps(
+            createInfo,
+            sampledTextureSlots,
+            readOnlyStorageTextureSlots,
+            readOnlyStorageBufferSlots,
+            readWriteStorageTextureSlots,
+            readWriteStorageBufferSlots)) {
+        D3D12_INTERNAL_DestroyComputeRootSignature(d3d12ComputeRootSignature);
+        return NULL;
     }
 
     if (createInfo->num_samplers) {
@@ -2796,93 +3190,84 @@ static D3D12ComputeRootSignature *D3D12_INTERNAL_CreateComputeRootSignature(
         rangeCount += 1;
         parameterCount += 1;
 
-        descriptorRange.RangeType = D3D12_DESCRIPTOR_RANGE_TYPE_SRV;
-        descriptorRange.NumDescriptors = createInfo->num_samplers;
-        descriptorRange.BaseShaderRegister = 0;
-        descriptorRange.RegisterSpace = 0;
-        descriptorRange.OffsetInDescriptorsFromTableStart = D3D12_DESCRIPTOR_RANGE_OFFSET_APPEND;
-        descriptorRanges[rangeCount] = descriptorRange;
-
-        rootParameter.ParameterType = D3D12_ROOT_PARAMETER_TYPE_DESCRIPTOR_TABLE;
-        rootParameter.DescriptorTable.NumDescriptorRanges = 1;
-        rootParameter.DescriptorTable.pDescriptorRanges = &descriptorRanges[rangeCount];
-        rootParameter.ShaderVisibility = D3D12_SHADER_VISIBILITY_ALL; // ALL is used for compute
-        rootParameters[parameterCount] = rootParameter;
-        d3d12ComputeRootSignature->samplerTextureRootIndex = parameterCount;
-        rangeCount += 1;
-        parameterCount += 1;
+        if (!D3D12_INTERNAL_AddDescriptorTableForSortedSlots(
+                rootParameters,
+                &parameterCount,
+                descriptorRanges,
+                &rangeCount,
+                D3D12_DESCRIPTOR_RANGE_TYPE_SRV,
+                0,
+                D3D12_SHADER_VISIBILITY_ALL,
+                sampledTextureSlots,
+                createInfo->num_samplers,
+                &d3d12ComputeRootSignature->samplerTextureRootIndex)) {
+            D3D12_INTERNAL_DestroyComputeRootSignature(d3d12ComputeRootSignature);
+            return NULL;
+        }
     }
 
-    if (createInfo->num_readonly_storage_textures) {
-        descriptorRange.RangeType = D3D12_DESCRIPTOR_RANGE_TYPE_SRV;
-        descriptorRange.NumDescriptors = createInfo->num_readonly_storage_textures;
-        descriptorRange.BaseShaderRegister = createInfo->num_samplers;
-        descriptorRange.RegisterSpace = 0;
-        descriptorRange.OffsetInDescriptorsFromTableStart = D3D12_DESCRIPTOR_RANGE_OFFSET_APPEND;
-        descriptorRanges[rangeCount] = descriptorRange;
-
-        rootParameter.ParameterType = D3D12_ROOT_PARAMETER_TYPE_DESCRIPTOR_TABLE;
-        rootParameter.DescriptorTable.NumDescriptorRanges = 1;
-        rootParameter.DescriptorTable.pDescriptorRanges = &descriptorRanges[rangeCount];
-        rootParameter.ShaderVisibility = D3D12_SHADER_VISIBILITY_ALL; // ALL is used for compute
-        rootParameters[parameterCount] = rootParameter;
-        d3d12ComputeRootSignature->readOnlyStorageTextureRootIndex = parameterCount;
-        rangeCount += 1;
-        parameterCount += 1;
+    if (createInfo->num_readonly_storage_textures &&
+        !D3D12_INTERNAL_AddDescriptorTableForSortedSlots(
+            rootParameters,
+            &parameterCount,
+            descriptorRanges,
+            &rangeCount,
+            D3D12_DESCRIPTOR_RANGE_TYPE_SRV,
+            0,
+            D3D12_SHADER_VISIBILITY_ALL,
+            readOnlyStorageTextureSlots,
+            createInfo->num_readonly_storage_textures,
+            &d3d12ComputeRootSignature->readOnlyStorageTextureRootIndex)) {
+        D3D12_INTERNAL_DestroyComputeRootSignature(d3d12ComputeRootSignature);
+        return NULL;
     }
 
-    if (createInfo->num_readonly_storage_buffers) {
-        descriptorRange.RangeType = D3D12_DESCRIPTOR_RANGE_TYPE_SRV;
-        descriptorRange.NumDescriptors = createInfo->num_readonly_storage_buffers;
-        descriptorRange.BaseShaderRegister = createInfo->num_samplers + createInfo->num_readonly_storage_textures;
-        descriptorRange.RegisterSpace = 0;
-        descriptorRange.OffsetInDescriptorsFromTableStart = D3D12_DESCRIPTOR_RANGE_OFFSET_APPEND;
-        descriptorRanges[rangeCount] = descriptorRange;
-
-        rootParameter.ParameterType = D3D12_ROOT_PARAMETER_TYPE_DESCRIPTOR_TABLE;
-        rootParameter.DescriptorTable.NumDescriptorRanges = 1;
-        rootParameter.DescriptorTable.pDescriptorRanges = &descriptorRanges[rangeCount];
-        rootParameter.ShaderVisibility = D3D12_SHADER_VISIBILITY_ALL; // ALL is used for compute
-        rootParameters[parameterCount] = rootParameter;
-        d3d12ComputeRootSignature->readOnlyStorageBufferRootIndex = parameterCount;
-        rangeCount += 1;
-        parameterCount += 1;
+    if (createInfo->num_readonly_storage_buffers &&
+        !D3D12_INTERNAL_AddDescriptorTableForSortedSlots(
+            rootParameters,
+            &parameterCount,
+            descriptorRanges,
+            &rangeCount,
+            D3D12_DESCRIPTOR_RANGE_TYPE_SRV,
+            0,
+            D3D12_SHADER_VISIBILITY_ALL,
+            readOnlyStorageBufferSlots,
+            createInfo->num_readonly_storage_buffers,
+            &d3d12ComputeRootSignature->readOnlyStorageBufferRootIndex)) {
+        D3D12_INTERNAL_DestroyComputeRootSignature(d3d12ComputeRootSignature);
+        return NULL;
     }
 
-    if (createInfo->num_readwrite_storage_textures) {
-        descriptorRange.RangeType = D3D12_DESCRIPTOR_RANGE_TYPE_UAV;
-        descriptorRange.NumDescriptors = createInfo->num_readwrite_storage_textures;
-        descriptorRange.BaseShaderRegister = 0;
-        descriptorRange.RegisterSpace = 1;
-        descriptorRange.OffsetInDescriptorsFromTableStart = D3D12_DESCRIPTOR_RANGE_OFFSET_APPEND;
-        descriptorRanges[rangeCount] = descriptorRange;
-
-        rootParameter.ParameterType = D3D12_ROOT_PARAMETER_TYPE_DESCRIPTOR_TABLE;
-        rootParameter.DescriptorTable.NumDescriptorRanges = 1;
-        rootParameter.DescriptorTable.pDescriptorRanges = &descriptorRanges[rangeCount];
-        rootParameter.ShaderVisibility = D3D12_SHADER_VISIBILITY_ALL; // ALL is used for compute
-        rootParameters[parameterCount] = rootParameter;
-        d3d12ComputeRootSignature->readWriteStorageTextureRootIndex = parameterCount;
-        rangeCount += 1;
-        parameterCount += 1;
+    if (createInfo->num_readwrite_storage_textures &&
+        !D3D12_INTERNAL_AddDescriptorTableForSortedSlots(
+            rootParameters,
+            &parameterCount,
+            descriptorRanges,
+            &rangeCount,
+            D3D12_DESCRIPTOR_RANGE_TYPE_UAV,
+            1,
+            D3D12_SHADER_VISIBILITY_ALL,
+            readWriteStorageTextureSlots,
+            createInfo->num_readwrite_storage_textures,
+            &d3d12ComputeRootSignature->readWriteStorageTextureRootIndex)) {
+        D3D12_INTERNAL_DestroyComputeRootSignature(d3d12ComputeRootSignature);
+        return NULL;
     }
 
-    if (createInfo->num_readwrite_storage_buffers) {
-        descriptorRange.RangeType = D3D12_DESCRIPTOR_RANGE_TYPE_UAV;
-        descriptorRange.NumDescriptors = createInfo->num_readwrite_storage_buffers;
-        descriptorRange.BaseShaderRegister = createInfo->num_readwrite_storage_textures;
-        descriptorRange.RegisterSpace = 1;
-        descriptorRange.OffsetInDescriptorsFromTableStart = D3D12_DESCRIPTOR_RANGE_OFFSET_APPEND;
-        descriptorRanges[rangeCount] = descriptorRange;
-
-        rootParameter.ParameterType = D3D12_ROOT_PARAMETER_TYPE_DESCRIPTOR_TABLE;
-        rootParameter.DescriptorTable.NumDescriptorRanges = 1;
-        rootParameter.DescriptorTable.pDescriptorRanges = &descriptorRanges[rangeCount];
-        rootParameter.ShaderVisibility = D3D12_SHADER_VISIBILITY_ALL; // ALL is used for compute
-        rootParameters[parameterCount] = rootParameter;
-        d3d12ComputeRootSignature->readWriteStorageBufferRootIndex = parameterCount;
-        rangeCount += 1;
-        parameterCount += 1;
+    if (createInfo->num_readwrite_storage_buffers &&
+        !D3D12_INTERNAL_AddDescriptorTableForSortedSlots(
+            rootParameters,
+            &parameterCount,
+            descriptorRanges,
+            &rangeCount,
+            D3D12_DESCRIPTOR_RANGE_TYPE_UAV,
+            1,
+            D3D12_SHADER_VISIBILITY_ALL,
+            readWriteStorageBufferSlots,
+            createInfo->num_readwrite_storage_buffers,
+            &d3d12ComputeRootSignature->readWriteStorageBufferRootIndex)) {
+        D3D12_INTERNAL_DestroyComputeRootSignature(d3d12ComputeRootSignature);
+        return NULL;
     }
 
     for (Uint32 i = 0; i < createInfo->num_uniform_buffers; i += 1) {
@@ -3381,6 +3766,12 @@ static SDL_GPUShader *D3D12_CreateShader(
     shader->numStorageBuffers = createinfo->num_storage_buffers;
     shader->numStorageTextures = createinfo->num_storage_textures;
     shader->numUniformBuffers = createinfo->num_uniform_buffers;
+    if ((createinfo->stage == SDL_GPU_SHADERSTAGE_VERTEX || createinfo->stage == SDL_GPU_SHADERSTAGE_FRAGMENT) &&
+        !D3D12_INTERNAL_LoadGraphicsBindingSlotsFromProps(createinfo, shader)) {
+        SDL_free(shader);
+        SDL_free(bytecode);
+        return NULL;
+    }
 
     shader->bytecode = bytecode;
     shader->bytecodeSize = bytecodeSize;
