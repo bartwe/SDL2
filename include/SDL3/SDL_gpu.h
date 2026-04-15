@@ -2583,9 +2583,14 @@ extern SDL_DECLSPEC SDL_PropertiesID SDLCALL SDL_GetGPUDeviceProperties(SDL_GPUD
 #define SDL_PROP_GPU_DEVICE_VENDOR_ID_NUMBER          "SDL.gpu.device.vendor_id"
 #define SDL_PROP_GPU_DEVICE_DEVICE_ID_NUMBER          "SDL.gpu.device.device_id"
 #define SDL_PROP_GPU_DEVICE_REVISION_NUMBER           "SDL.gpu.device.revision"
+#define SDL_PROP_GPU_DEVICE_VULKAN_INSTANCE_POINTER  "SDL.gpu.device.vulkan.instance"
+#define SDL_PROP_GPU_DEVICE_VULKAN_PHYSICAL_DEVICE_POINTER "SDL.gpu.device.vulkan.physical_device"
 #define SDL_PROP_GPU_DEVICE_VULKAN_DEVICE_POINTER    "SDL.gpu.device.vulkan.device"
+#define SDL_PROP_GPU_DEVICE_VULKAN_QUEUE_POINTER     "SDL.gpu.device.vulkan.queue"
+#define SDL_PROP_GPU_DEVICE_VULKAN_QUEUE_FAMILY_INDEX_NUMBER "SDL.gpu.device.vulkan.queue_family_index"
 #define SDL_PROP_GPU_DEVICE_D3D12_DEVICE_POINTER     "SDL.gpu.device.d3d12.device"
 #define SDL_PROP_GPU_DEVICE_D3D12_COMMAND_QUEUE_POINTER "SDL.gpu.device.d3d12.command_queue"
+#define SDL_PROP_GPU_COMMAND_BUFFER_VULKAN_COMMAND_BUFFER_POINTER "SDL.gpu.command_buffer.vulkan.command_buffer"
 #define SDL_PROP_GPU_COMMAND_BUFFER_D3D12_COMMAND_LIST_POINTER "SDL.gpu.command_buffer.d3d12.command_list"
 
 

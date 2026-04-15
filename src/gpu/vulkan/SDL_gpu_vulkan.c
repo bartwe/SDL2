@@ -3360,6 +3360,33 @@ static void VULKAN_INTERNAL_DestroyBuffer(
     SDL_free(buffer);
 }
 
+static void VULKAN_INTERNAL_DestroyCommandBuffer(
+    VulkanCommandBuffer *commandBuffer)
+{
+    if (commandBuffer == NULL) {
+        return;
+    }
+
+    if (commandBuffer->common.props != 0) {
+        SDL_DestroyProperties(commandBuffer->common.props);
+    }
+
+    SDL_free(commandBuffer->presentDatas);
+    SDL_free(commandBuffer->waitSemaphores);
+    SDL_free(commandBuffer->signalSemaphores);
+    SDL_free(commandBuffer->usedBuffers);
+    SDL_free(commandBuffer->buffersUsedInPendingTransfers);
+    SDL_free(commandBuffer->usedTextures);
+    SDL_free(commandBuffer->texturesUsedInPendingTransfers);
+    SDL_free(commandBuffer->usedSamplers);
+    SDL_free(commandBuffer->usedGraphicsPipelines);
+    SDL_free(commandBuffer->usedComputePipelines);
+    SDL_free(commandBuffer->usedFramebuffers);
+    SDL_free(commandBuffer->usedUniformBuffers);
+
+    SDL_free(commandBuffer);
+}
+
 static void VULKAN_INTERNAL_DestroyCommandPool(
     VulkanRenderer *renderer,
     VulkanCommandPool *commandPool)
@@ -3374,19 +3401,7 @@ static void VULKAN_INTERNAL_DestroyCommandPool(
 
     for (i = 0; i < commandPool->inactiveCommandBufferCount; i += 1) {
         commandBuffer = commandPool->inactiveCommandBuffers[i];
-
-        SDL_free(commandBuffer->presentDatas);
-        SDL_free(commandBuffer->waitSemaphores);
-        SDL_free(commandBuffer->signalSemaphores);
-        SDL_free(commandBuffer->usedBuffers);
-        SDL_free(commandBuffer->usedTextures);
-        SDL_free(commandBuffer->usedSamplers);
-        SDL_free(commandBuffer->usedGraphicsPipelines);
-        SDL_free(commandBuffer->usedComputePipelines);
-        SDL_free(commandBuffer->usedFramebuffers);
-        SDL_free(commandBuffer->usedUniformBuffers);
-
-        SDL_free(commandBuffer);
+        VULKAN_INTERNAL_DestroyCommandBuffer(commandBuffer);
     }
 
     SDL_free(commandPool->inactiveCommandBuffers);
@@ -9642,10 +9657,41 @@ static bool VULKAN_INTERNAL_AllocateCommandBuffer(
 
     CHECK_VULKAN_ERROR_AND_RETURN(vulkanResult, vkAllocateCommandBuffers, false);
 
-    commandBuffer = SDL_malloc(sizeof(VulkanCommandBuffer));
+    commandBuffer = SDL_calloc(1, sizeof(VulkanCommandBuffer));
+    if (commandBuffer == NULL) {
+        renderer->vkFreeCommandBuffers(
+            renderer->logicalDevice,
+            vulkanCommandPool->commandPool,
+            1,
+            &commandBufferHandle);
+        return false;
+    }
+
     commandBuffer->renderer = renderer;
     commandBuffer->commandPool = vulkanCommandPool;
     commandBuffer->commandBuffer = commandBufferHandle;
+    commandBuffer->common.props = SDL_CreateProperties();
+    if (commandBuffer->common.props == 0) {
+        VULKAN_INTERNAL_DestroyCommandBuffer(commandBuffer);
+        renderer->vkFreeCommandBuffers(
+            renderer->logicalDevice,
+            vulkanCommandPool->commandPool,
+            1,
+            &commandBufferHandle);
+        SET_STRING_ERROR_AND_RETURN("Failed to create Vulkan command buffer properties.", false);
+    }
+    if (!SDL_SetPointerProperty(
+            commandBuffer->common.props,
+            SDL_PROP_GPU_COMMAND_BUFFER_VULKAN_COMMAND_BUFFER_POINTER,
+            commandBuffer->commandBuffer)) {
+        VULKAN_INTERNAL_DestroyCommandBuffer(commandBuffer);
+        renderer->vkFreeCommandBuffers(
+            renderer->logicalDevice,
+            vulkanCommandPool->commandPool,
+            1,
+            &commandBufferHandle);
+        SET_STRING_ERROR_AND_RETURN("Failed to expose Vulkan command buffer pointer on command buffer properties.", false);
+    }
 
     commandBuffer->inFlightFence = VK_NULL_HANDLE;
 
@@ -12984,11 +13030,26 @@ static SDL_GPUDevice *VULKAN_CreateDevice(bool debugMode, bool preferLowPower, S
         SDL_LogInfo(SDL_LOG_CATEGORY_GPU, "SDL_GPU Driver: Vulkan");
     }
 
-    // Expose the raw VkDevice handle for backend-specific diagnostics (e.g. VK_EXT_device_fault)
+    SDL_SetPointerProperty(
+        renderer->props,
+        SDL_PROP_GPU_DEVICE_VULKAN_INSTANCE_POINTER,
+        renderer->instance);
+    SDL_SetPointerProperty(
+        renderer->props,
+        SDL_PROP_GPU_DEVICE_VULKAN_PHYSICAL_DEVICE_POINTER,
+        renderer->physicalDevice);
     SDL_SetPointerProperty(
         renderer->props,
         SDL_PROP_GPU_DEVICE_VULKAN_DEVICE_POINTER,
         renderer->logicalDevice);
+    SDL_SetPointerProperty(
+        renderer->props,
+        SDL_PROP_GPU_DEVICE_VULKAN_QUEUE_POINTER,
+        renderer->unifiedQueue);
+    SDL_SetNumberProperty(
+        renderer->props,
+        SDL_PROP_GPU_DEVICE_VULKAN_QUEUE_FAMILY_INDEX_NUMBER,
+        renderer->queueFamilyIndex);
 
     // Record device name
     const char *deviceName = renderer->physicalDeviceProperties.properties.deviceName;
