@@ -844,6 +844,12 @@ typedef struct D3D12WindowData
     D3D12XBOX_FRAME_PIPELINE_TOKEN frameToken;
 #else
     IDXGISwapChain3 *swapchain;
+    HANDLE frameLatencyWaitable;
+    // The latency waitable is a semaphore released once per processed present.
+    // Only wait on it when a present happened since the previous wait, so
+    // redundant SDL_WaitForGPUSwapchain calls or skipped presents cannot
+    // drain it and stall the frame loop.
+    bool presentedSinceLatencyWait;
 #endif
     SDL_GPUPresentMode present_mode;
     SDL_GPUSwapchainComposition swapchainComposition;
@@ -894,6 +900,7 @@ struct D3D12Renderer
 #endif
     ID3D12Debug *d3d12Debug;
     BOOL supportsTearing;
+    bool latencyWaitableEnabled;
     SDL_SharedObject *d3d12_dll;
     ID3D12Device *device;
     PFN_D3D12_SERIALIZE_ROOT_SIGNATURE pD3D12SerializeRootSignature;
@@ -6952,13 +6959,16 @@ static bool D3D12_INTERNAL_ResizeSwapchain(
     }
 
     // Resize the swapchain
+    // The flags must match the swapchain creation flags exactly; the frame
+    // latency waitable flag in particular cannot be added or removed here.
     HRESULT res = IDXGISwapChain_ResizeBuffers(
         windowData->swapchain,
         0, // Keep buffer count the same
         0, // use client window width
         0, // use client window height
         DXGI_FORMAT_UNKNOWN, // Keep the old format
-        renderer->supportsTearing ? DXGI_SWAP_CHAIN_FLAG_ALLOW_TEARING : 0);
+        (renderer->supportsTearing ? DXGI_SWAP_CHAIN_FLAG_ALLOW_TEARING : 0) |
+            (renderer->latencyWaitableEnabled ? DXGI_SWAP_CHAIN_FLAG_FRAME_LATENCY_WAITABLE_OBJECT : 0));
     CHECK_D3D12_ERROR_AND_RETURN("Could not resize swapchain buffers", false);
 
     // Create texture object for the swapchain
@@ -6998,6 +7008,11 @@ static void D3D12_INTERNAL_DestroySwapchain(
         SDL_free(windowData->textureContainers[i].activeTexture->subresources);
         SDL_free(windowData->textureContainers[i].activeTexture);
         SDL_free(windowData->textureContainers[i].textures);
+    }
+
+    if (windowData->frameLatencyWaitable != NULL) {
+        CloseHandle(windowData->frameLatencyWaitable);
+        windowData->frameLatencyWaitable = NULL;
     }
 
     IDXGISwapChain_Release(windowData->swapchain);
@@ -7058,6 +7073,10 @@ static bool D3D12_INTERNAL_CreateSwapchain(
         swapchainDesc.Flags = 0;
     }
 
+    if (renderer->latencyWaitableEnabled) {
+        swapchainDesc.Flags |= DXGI_SWAP_CHAIN_FLAG_FRAME_LATENCY_WAITABLE_OBJECT;
+    }
+
     if (!IsWindow(dxgiHandle)) {
         return false;
     }
@@ -7079,6 +7098,26 @@ static bool D3D12_INTERNAL_CreateSwapchain(
         (void **)&swapchain3);
     IDXGISwapChain1_Release(swapchain);
     CHECK_D3D12_ERROR_AND_RETURN("Could not create IDXGISwapChain3", false);
+
+    windowData->frameLatencyWaitable = NULL;
+    // Start true so the first frame waits; the waitable semaphore is created
+    // with an initial count of the maximum frame latency.
+    windowData->presentedSinceLatencyWait = true;
+    if (renderer->latencyWaitableEnabled) {
+        res = IDXGISwapChain3_SetMaximumFrameLatency(
+            swapchain3,
+            renderer->allowedFramesInFlight);
+        if (FAILED(res)) {
+            IDXGISwapChain3_Release(swapchain3);
+            CHECK_D3D12_ERROR_AND_RETURN("Could not set the swapchain maximum frame latency", false);
+        }
+
+        windowData->frameLatencyWaitable = IDXGISwapChain3_GetFrameLatencyWaitableObject(swapchain3);
+        if (windowData->frameLatencyWaitable == NULL) {
+            IDXGISwapChain3_Release(swapchain3);
+            SET_STRING_ERROR_AND_RETURN("Could not get the swapchain frame latency waitable object", false);
+        }
+    }
 
     if (swapchainComposition != SDL_GPU_SWAPCHAINCOMPOSITION_SDR) {
         // Support already verified if we hit this block
@@ -7610,6 +7649,17 @@ static bool D3D12_WaitForSwapchain(
         SET_STRING_ERROR_AND_RETURN("Cannot wait for a swapchain from an unclaimed window!", false);
     }
 
+#if !(defined(SDL_PLATFORM_XBOXONE) || defined(SDL_PLATFORM_XBOXSERIES))
+    if (windowData->frameLatencyWaitable != NULL &&
+        windowData->presentedSinceLatencyWait) {
+        // Pace the frame start on presentation progress. The wait is bounded:
+        // proceeding without the signal only costs pacing quality for this
+        // frame, correctness is covered by the fence wait below.
+        (void)WaitForSingleObjectEx(windowData->frameLatencyWaitable, 100, FALSE);
+        windowData->presentedSinceLatencyWait = false;
+    }
+#endif
+
     if (windowData->inFlightFences[windowData->frameCounter] != NULL) {
         if (!D3D12_WaitForFences(
             driverData,
@@ -8139,6 +8189,8 @@ static bool D3D12_Submit(
             presentFlags);
         if (FAILED(res)) {
             result = false;
+        } else {
+            windowData->presentedSinceLatencyWait = true;
         }
 
         ID3D12Resource_Release(windowData->textureContainers[presentData->swapchainImageIndex].activeTexture->resource);
@@ -9583,6 +9635,7 @@ static SDL_GPUDevice *D3D12_CreateDevice(bool debugMode, bool preferLowPower, SD
 
     renderer->debug_mode = debugMode;
     renderer->allowedFramesInFlight = 2;
+    renderer->latencyWaitableEnabled = SDL_GetBooleanProperty(props, SDL_PROP_GPU_DEVICE_CREATE_D3D12_LATENCY_WAITABLE_BOOLEAN, false);
 
     renderer->semantic = SDL_strdup(SDL_GetStringProperty(props, SDL_PROP_GPU_DEVICE_CREATE_D3D12_SEMANTIC_NAME_STRING, "TEXCOORD"));
 

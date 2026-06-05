@@ -2322,6 +2322,13 @@ extern SDL_DECLSPEC SDL_GPUDevice * SDLCALL SDL_CreateGPUDevice(
  *   relative to the executable path of your app. Be sure not to put the DLL
  *   in the same directory as the exe; Microsoft strongly advises against
  *   this!
+ * - `SDL_PROP_GPU_DEVICE_CREATE_D3D12_LATENCY_WAITABLE_BOOLEAN`: Create
+ *   swapchains with DXGI_SWAP_CHAIN_FLAG_FRAME_LATENCY_WAITABLE_OBJECT and
+ *   pace SDL_WaitForGPUSwapchain on the DXGI frame latency waitable object
+ *   (with the maximum frame latency set to the allowed frames in flight) in
+ *   addition to the swapchain texture fences. This throttles the frame loop
+ *   on presentation progress rather than GPU completion, reducing input
+ *   latency. Defaults to false.
  *
  * With the Vulkan backend:
  *
@@ -2378,6 +2385,7 @@ extern SDL_DECLSPEC SDL_GPUDevice * SDLCALL SDL_CreateGPUDeviceWithProperties(
 #define SDL_PROP_GPU_DEVICE_CREATE_D3D12_SEMANTIC_NAME_STRING                   "SDL.gpu.device.create.d3d12.semantic"
 #define SDL_PROP_GPU_DEVICE_CREATE_D3D12_AGILITY_SDK_VERSION_NUMBER             "SDL.gpu.device.create.d3d12.agility_sdk_version"
 #define SDL_PROP_GPU_DEVICE_CREATE_D3D12_AGILITY_SDK_PATH_STRING                "SDL.gpu.device.create.d3d12.agility_sdk_path"
+#define SDL_PROP_GPU_DEVICE_CREATE_D3D12_LATENCY_WAITABLE_BOOLEAN               "SDL.gpu.device.create.d3d12.latencywaitable"
 #define SDL_PROP_GPU_DEVICE_CREATE_VULKAN_REQUIRE_HARDWARE_ACCELERATION_BOOLEAN "SDL.gpu.device.create.vulkan.requirehardwareacceleration"
 #define SDL_PROP_GPU_DEVICE_CREATE_VULKAN_OPTIONS_POINTER                       "SDL.gpu.device.create.vulkan.options"
 #define SDL_PROP_GPU_DEVICE_CREATE_METAL_ALLOW_MACFAMILY1_BOOLEAN               "SDL.gpu.device.create.metal.allowmacfamily1"
