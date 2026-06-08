@@ -2337,6 +2337,8 @@ static void METAL_BeginRenderPass(
 
             if (IsStencilFormat(container->header.info.format)) {
                 passDescriptor.stencilAttachment.texture = texture->handle;
+                passDescriptor.stencilAttachment.level = depthStencilTargetInfo->mip_level;
+                passDescriptor.stencilAttachment.slice = depthStencilTargetInfo->layer;
                 passDescriptor.stencilAttachment.loadAction = SDLToMetal_LoadOp[depthStencilTargetInfo->stencil_load_op];
                 passDescriptor.stencilAttachment.storeAction = SDLToMetal_StoreOp[depthStencilTargetInfo->stencil_store_op];
                 passDescriptor.stencilAttachment.clearStencil = depthStencilTargetInfo->clear_stencil;
@@ -3545,6 +3547,8 @@ static void METAL_INTERNAL_PerformPendingDestroys(
     Sint32 i;
     Uint32 j;
 
+    SDL_LockMutex(renderer->disposeLock);
+
     for (i = renderer->bufferContainersToDestroyCount - 1; i >= 0; i -= 1) {
         referenceCount = 0;
         for (j = 0; j < renderer->bufferContainersToDestroy[i]->bufferCount; j += 1) {
@@ -3574,6 +3578,8 @@ static void METAL_INTERNAL_PerformPendingDestroys(
             renderer->textureContainersToDestroyCount -= 1;
         }
     }
+
+    SDL_UnlockMutex(renderer->disposeLock);
 }
 
 // Fences

@@ -402,6 +402,11 @@ extern "C" {
  * - "Movie" - Music or sound with dialog
  * - "Media" - Music or sound without dialog
  *
+ * Android's AAudio target supports this hint as of SDL 3.4.4. Android does
+ * not support the exact same options as WASAPI, but for portability, will
+ * attempt to map these same strings to the `aaudio_usage_t` constants. For
+ * example, "Movie" and "Media" will both map to `AAUDIO_USAGE_MEDIA`, etc.
+ *
  * If your application applies its own echo cancellation, gain control, and
  * noise reduction it should also set SDL_HINT_AUDIO_DEVICE_RAW_STREAM.
  *
@@ -1406,6 +1411,26 @@ extern "C" {
  * \since This hint is available since SDL 3.2.0.
  */
 #define SDL_HINT_JOYSTICK_GAMEINPUT "SDL_JOYSTICK_GAMEINPUT"
+
+/**
+ * A variable controlling whether GameInput should be used for handling 
+ * GIP devices that require raw report processing, but aren't supported 
+ * by HIDRAW, such as Xbox One Guitars.
+ * 
+ * Note that this is only supported with GameInput 3 or newer.
+ *
+ * The variable can be set to the following values:
+ *
+ * - "0": GameInput is not used to handle raw GIP devices.
+ * - "1": GameInput is used.
+ *
+ * The default is "1" when using GameInput 3 or newer, and is "0" otherwise.
+ *
+ * This hint should be set before SDL is initialized.
+ *
+ * \since This hint is available since SDL 3.4.4.
+ */
+#define SDL_HINT_JOYSTICK_GAMEINPUT_RAW "SDL_JOYSTICK_GAMEINPUT_RAW"
 
 /**
  * A variable containing a list of devices known to have a GameCube form
@@ -2747,7 +2772,7 @@ extern "C" {
  *   (default)
  * - "1": Cursors will automatically match the display content scale (e.g. a
  *   2x sized cursor will be used when the window is on a monitor with 200%
- *   scale). This is currently implemented on Windows and Wayland.
+ *   scale). This is currently implemented on Windows.
  *
  * This hint needs to be set before creating cursors.
  *
@@ -4018,6 +4043,31 @@ extern "C" {
  * \since This hint is available since SDL 3.2.0.
  */
 #define SDL_HINT_VIDEO_WIN_D3DCOMPILER "SDL_VIDEO_WIN_D3DCOMPILER"
+
+/**
+ * A variable controlling whether the X Synchronization Extension is enabled.
+ *
+ * If set, this can result in smoother window resizing when rendering using
+ * OpenGL, however, there are some conditions:
+ *
+ *  - It is only activated on windows created with the `SDL_WINDOW_OPENGL` flag
+ *    (windows using an SDL OpenGL renderer have this automatically set).
+ *  - When activated, presentation must be done with `SDL_GL_SwapWindow()`
+ *    (`SDL_RenderPresent()` calls this internally for OpenGL renderers as well).
+ *
+ * Enabling this and presenting via an external mechanism will result in sync
+ * requests not being acked, and hangs and other odd window behavior may result.
+ *
+ * The variable can be set to the following values:
+ *
+ * - "0": The X Synchronization Extension is disabled. (default)
+ * - "1": The X Synchronization Extension is enabled.
+ *
+ * This hint should be set before creating a window.
+ *
+ * \since This hint is available since SDL 3.4.10.
+ */
+#define SDL_HINT_VIDEO_X11_ENABLE_XSYNC_EXT "SDL_VIDEO_X11_ENABLE_XSYNC_EXT"
 
 /**
  * A variable controlling whether SDL should call XSelectInput() to enable

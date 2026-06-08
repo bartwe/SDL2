@@ -682,7 +682,7 @@ static bool METAL_CreateTexture(SDL_Renderer *renderer, SDL_Texture *texture, SD
 {
     @autoreleasepool {
         SDL3METAL_RenderData *data = (__bridge SDL3METAL_RenderData *)renderer->internal;
-        MTLPixelFormat pixfmt;
+        MTLPixelFormat pixfmt = MTLPixelFormatInvalid;
         MTLTextureDescriptor *mtltexdesc;
         id<MTLTexture> mtltexture = nil, mtltextureUv = nil;
         SDL3METAL_TextureData *texturedata;
@@ -715,6 +715,26 @@ static bool METAL_CreateTexture(SDL_Renderer *renderer, SDL_Texture *texture, SD
         case SDL_PIXELFORMAT_ABGR2101010:
             pixfmt = MTLPixelFormatRGB10A2Unorm;
             break;
+        case SDL_PIXELFORMAT_RGB565:
+            if (@available(macOS 11.0, *)) {
+                pixfmt = MTLPixelFormatB5G6R5Unorm;
+            }
+            break;
+        case SDL_PIXELFORMAT_RGBA5551:
+            if (@available(macOS 11.0, *)) {
+                pixfmt = MTLPixelFormatA1BGR5Unorm;
+            }
+            break;
+        case SDL_PIXELFORMAT_ARGB1555:
+            if (@available(macOS 11.0, *)) {
+                pixfmt = MTLPixelFormatBGR5A1Unorm;
+            }
+            break;
+        case SDL_PIXELFORMAT_RGBA4444:
+            if (@available(macOS 11.0, *)) {
+                pixfmt = MTLPixelFormatABGR4Unorm;
+            }
+            break;
         case SDL_PIXELFORMAT_INDEX8:
         case SDL_PIXELFORMAT_IYUV:
         case SDL_PIXELFORMAT_YV12:
@@ -732,6 +752,10 @@ static bool METAL_CreateTexture(SDL_Renderer *renderer, SDL_Texture *texture, SD
             pixfmt = MTLPixelFormatRGBA32Float;
             break;
         default:
+            break;
+        }
+
+        if (pixfmt == MTLPixelFormatInvalid) {
             return SDL_SetError("Texture format %s not supported by Metal", SDL_GetPixelFormatName(texture->format));
         }
 
@@ -1369,6 +1393,7 @@ typedef struct
     size_t constants_offset;
     SDL_Texture *texture;
     bool texture_palette;
+    SDL_PixelFormat texture_format;
     SDL_ScaleMode texture_scale_mode;
     SDL_TextureAddressMode texture_address_mode_u;
     SDL_TextureAddressMode texture_address_mode_v;
@@ -1513,14 +1538,14 @@ static bool SetDrawState(SDL_Renderer *renderer, const SDL_RenderCommand *cmd, c
             METAL_GetOutputSize(renderer, &output.w, &output.h);
         }
 
-        if (SDL_GetRectIntersection(&output, &clip, &clip)) {
-            MTLScissorRect mtlrect;
-            mtlrect.x = clip.x;
-            mtlrect.y = clip.y;
-            mtlrect.width = clip.w;
-            mtlrect.height = clip.h;
-            [data.mtlcmdencoder setScissorRect:mtlrect];
-        }
+        SDL_GetRectIntersection(&output, &clip, &clip);
+
+        MTLScissorRect mtlrect;
+        mtlrect.x = clip.x;
+        mtlrect.y = clip.y;
+        mtlrect.width = clip.w;
+        mtlrect.height = clip.h;
+        [data.mtlcmdencoder setScissorRect:mtlrect];
 
         statecache->cliprect_dirty = false;
     }
@@ -1645,7 +1670,8 @@ static bool SetCopyState(SDL_Renderer *renderer, const SDL_RenderCommand *cmd, c
         statecache->texture = texture;
     }
 
-    if (cmd->data.draw.texture_scale_mode != statecache->texture_scale_mode ||
+    if (texture->format != statecache->texture_format ||
+        cmd->data.draw.texture_scale_mode != statecache->texture_scale_mode ||
         cmd->data.draw.texture_address_mode_u != statecache->texture_address_mode_u ||
         cmd->data.draw.texture_address_mode_v != statecache->texture_address_mode_v) {
         id<MTLSamplerState> mtlsampler = GetSampler(data, texture->format, cmd->data.draw.texture_scale_mode, cmd->data.draw.texture_address_mode_u, cmd->data.draw.texture_address_mode_v);
@@ -1654,6 +1680,7 @@ static bool SetCopyState(SDL_Renderer *renderer, const SDL_RenderCommand *cmd, c
         }
         [data.mtlcmdencoder setFragmentSamplerState:mtlsampler atIndex:0];
 
+        statecache->texture_format = texture->format;
         statecache->texture_scale_mode = cmd->data.draw.texture_scale_mode;
         statecache->texture_address_mode_u = cmd->data.draw.texture_address_mode_u;
         statecache->texture_address_mode_v = cmd->data.draw.texture_address_mode_v;
@@ -1947,6 +1974,21 @@ static SDL_Surface *METAL_RenderReadPixels(SDL_Renderer *renderer, const SDL_Rec
             break;
         case MTLPixelFormatRGBA16Float:
             format = SDL_PIXELFORMAT_RGBA64_FLOAT;
+            break;
+        case MTLPixelFormatRGBA32Float:
+            format = SDL_PIXELFORMAT_RGBA128_FLOAT;
+            break;
+        case MTLPixelFormatB5G6R5Unorm:
+            format = SDL_PIXELFORMAT_RGB565;
+            break;
+        case MTLPixelFormatA1BGR5Unorm:
+            format = SDL_PIXELFORMAT_RGBA5551;
+            break;
+        case MTLPixelFormatBGR5A1Unorm:
+            format = SDL_PIXELFORMAT_ARGB1555;
+            break;
+        case MTLPixelFormatABGR4Unorm:
+            format = SDL_PIXELFORMAT_RGBA4444;
             break;
         default:
             SDL_SetError("Unknown framebuffer pixel format");
@@ -2364,6 +2406,14 @@ static bool METAL_CreateRenderer(SDL_Renderer *renderer, SDL_Window *window, SDL
         SDL_AddSupportedTextureFormat(renderer, SDL_PIXELFORMAT_ABGR2101010);
         SDL_AddSupportedTextureFormat(renderer, SDL_PIXELFORMAT_RGBA64_FLOAT);
         SDL_AddSupportedTextureFormat(renderer, SDL_PIXELFORMAT_RGBA128_FLOAT);
+        if (@available(macOS 11.0, iOS 13.0, tvOS 13.0, *)) {
+            if ([mtldevice supportsFamily:MTLGPUFamilyApple1]) {
+                SDL_AddSupportedTextureFormat(renderer, SDL_PIXELFORMAT_RGB565);
+                SDL_AddSupportedTextureFormat(renderer, SDL_PIXELFORMAT_RGBA5551);
+                SDL_AddSupportedTextureFormat(renderer, SDL_PIXELFORMAT_ARGB1555);
+                SDL_AddSupportedTextureFormat(renderer, SDL_PIXELFORMAT_RGBA4444);
+            }
+        }
         SDL_AddSupportedTextureFormat(renderer, SDL_PIXELFORMAT_INDEX8);
         SDL_AddSupportedTextureFormat(renderer, SDL_PIXELFORMAT_YV12);
         SDL_AddSupportedTextureFormat(renderer, SDL_PIXELFORMAT_IYUV);
