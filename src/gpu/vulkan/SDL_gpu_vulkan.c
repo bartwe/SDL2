@@ -1506,6 +1506,74 @@ static bool VULKAN_INTERNAL_CreateDebugMessenger(VulkanRenderer *renderer)
     return true;
 }
 
+// Query and log GPU fault diagnostics after a device loss (VK_EXT_device_fault).
+// Safe to call unconditionally: it no-ops unless the extension was enabled and
+// the entry point resolved. Uses the standard two-call idiom (counts, then data).
+static void VULKAN_INTERNAL_ReportDeviceFault(VulkanRenderer *renderer)
+{
+    VkDeviceFaultCountsEXT faultCounts;
+    VkDeviceFaultInfoEXT faultInfo;
+    VkResult result;
+    Uint32 i;
+
+    if (renderer == NULL ||
+        !renderer->supports.EXT_device_fault ||
+        renderer->vkGetDeviceFaultInfoEXT == NULL ||
+        renderer->logicalDevice == VK_NULL_HANDLE) {
+        return;
+    }
+
+    SDL_zero(faultCounts);
+    faultCounts.sType = VK_STRUCTURE_TYPE_DEVICE_FAULT_COUNTS_EXT;
+
+    // First call: retrieve the counts only.
+    result = renderer->vkGetDeviceFaultInfoEXT(renderer->logicalDevice, &faultCounts, NULL);
+    if (result != VK_SUCCESS && result != VK_INCOMPLETE) {
+        return;
+    }
+
+    SDL_zero(faultInfo);
+    faultInfo.sType = VK_STRUCTURE_TYPE_DEVICE_FAULT_INFO_EXT;
+    if (faultCounts.addressInfoCount > 0) {
+        faultInfo.pAddressInfos = (VkDeviceFaultAddressInfoEXT *)SDL_calloc(
+            faultCounts.addressInfoCount, sizeof(VkDeviceFaultAddressInfoEXT));
+    }
+    if (faultCounts.vendorInfoCount > 0) {
+        faultInfo.pVendorInfos = (VkDeviceFaultVendorInfoEXT *)SDL_calloc(
+            faultCounts.vendorInfoCount, sizeof(VkDeviceFaultVendorInfoEXT));
+    }
+    // Never request the opaque vendor binary blob.
+    faultCounts.vendorBinarySize = 0;
+
+    // Second call: retrieve the actual fault data into the arrays just allocated.
+    result = renderer->vkGetDeviceFaultInfoEXT(renderer->logicalDevice, &faultCounts, &faultInfo);
+    if (result == VK_SUCCESS || result == VK_INCOMPLETE) {
+        SDL_LogError(SDL_LOG_CATEGORY_GPU, "Vulkan device fault: %s", faultInfo.description);
+
+        for (i = 0; i < faultCounts.addressInfoCount && faultInfo.pAddressInfos != NULL; i += 1) {
+            const VkDeviceFaultAddressInfoEXT *info = &faultInfo.pAddressInfos[i];
+            SDL_LogError(
+                SDL_LOG_CATEGORY_GPU,
+                "  fault address: type=%d reportedAddress=0x%" SDL_PRIx64 " precision=0x%" SDL_PRIx64,
+                (int)info->addressType,
+                (Uint64)info->reportedAddress,
+                (Uint64)info->addressPrecision);
+        }
+        for (i = 0; i < faultCounts.vendorInfoCount && faultInfo.pVendorInfos != NULL; i += 1) {
+            const VkDeviceFaultVendorInfoEXT *info = &faultInfo.pVendorInfos[i];
+            SDL_LogError(
+                SDL_LOG_CATEGORY_GPU,
+                "  vendor fault: %s code=0x%" SDL_PRIx64 " data=0x%" SDL_PRIx64,
+                info->description,
+                (Uint64)info->vendorFaultCode,
+                (Uint64)info->vendorFaultData);
+        }
+    }
+
+    SDL_free(faultInfo.pAddressInfos);
+    SDL_free(faultInfo.pVendorInfos);
+}
+
 #define SET_ERROR(fmt, msg)                               \
     do {                                                  \
         if (renderer->debugMode) {                        \
@@ -1527,6 +1595,9 @@ static bool VULKAN_INTERNAL_CreateDebugMessenger(VulkanRenderer *renderer)
 #define CHECK_VULKAN_ERROR_AND_RETURN(res, fn, ret)                                                             \
     do {                                                                                                        \
         if ((res) != VK_SUCCESS) {                                                                              \
+            if ((res) == VK_ERROR_DEVICE_LOST) {                                                                \
+                VULKAN_INTERNAL_ReportDeviceFault(renderer);                                                    \
+            }                                                                                                   \
             const char *vkResultName = SDL_Vulkan_GetResultString(res);                                         \
             const char *vkLegacyName = VkErrorMessages(res);                                                    \
             const char *vkFriendlyMessage = VkErrorFriendlyMessage(res);                                        \
@@ -9739,27 +9810,16 @@ static bool VULKAN_INTERNAL_AllocateCommandBuffer(
     commandBuffer->renderer = renderer;
     commandBuffer->commandPool = vulkanCommandPool;
     commandBuffer->commandBuffer = commandBufferHandle;
+    // Native-handle exposure is best-effort: never fail command buffer
+    // allocation over it. If this fails (only realistically on OOM),
+    // SDL_GetGPUCommandBufferProperties returns 0 or lacks the key.
     commandBuffer->common.props = SDL_CreateProperties();
-    if (commandBuffer->common.props == 0) {
-        VULKAN_INTERNAL_DestroyCommandBuffer(commandBuffer);
-        renderer->vkFreeCommandBuffers(
-            renderer->logicalDevice,
-            vulkanCommandPool->commandPool,
-            1,
-            &commandBufferHandle);
-        SET_STRING_ERROR_AND_RETURN("Failed to create Vulkan command buffer properties.", false);
-    }
-    if (!SDL_SetPointerProperty(
+    if (commandBuffer->common.props == 0 ||
+        !SDL_SetPointerProperty(
             commandBuffer->common.props,
             SDL_PROP_GPU_COMMAND_BUFFER_VULKAN_COMMAND_BUFFER_POINTER,
             commandBuffer->commandBuffer)) {
-        VULKAN_INTERNAL_DestroyCommandBuffer(commandBuffer);
-        renderer->vkFreeCommandBuffers(
-            renderer->logicalDevice,
-            vulkanCommandPool->commandPool,
-            1,
-            &commandBufferHandle);
-        SET_STRING_ERROR_AND_RETURN("Failed to expose Vulkan command buffer pointer on command buffer properties.", false);
+        SDL_LogWarn(SDL_LOG_CATEGORY_GPU, "Failed to expose Vulkan command buffer pointer on command buffer properties.");
     }
 
     commandBuffer->inFlightFence = VK_NULL_HANDLE;
@@ -12918,6 +12978,19 @@ static Uint8 VULKAN_INTERNAL_CreateLogicalDevice(
         deviceCreateInfo.pEnabledFeatures = &features->desiredVulkan10DeviceFeatures;
     }
 
+    // Enable VK_EXT_device_fault (when supported) so we can query GPU fault
+    // diagnostics after device loss. Prepend it to whatever pNext chain the
+    // branches above produced; this is legal alongside pEnabledFeatures because
+    // it is a standalone feature struct, not VkPhysicalDeviceFeatures2.
+    VkPhysicalDeviceFaultFeaturesEXT faultFeatures;
+    if (renderer->supports.EXT_device_fault) {
+        SDL_zero(faultFeatures);
+        faultFeatures.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_FAULT_FEATURES_EXT;
+        faultFeatures.deviceFault = VK_TRUE;
+        faultFeatures.pNext = (void *)deviceCreateInfo.pNext;
+        deviceCreateInfo.pNext = &faultFeatures;
+    }
+
     vulkanResult = renderer->vkCreateDevice(
         renderer->physicalDevice,
         &deviceCreateInfo,
@@ -13108,26 +13181,29 @@ static SDL_GPUDevice *VULKAN_CreateDevice(bool debugMode, bool preferLowPower, S
         SDL_LogInfo(SDL_LOG_CATEGORY_GPU, "SDL_GPU Driver: Vulkan");
     }
 
-    SDL_SetPointerProperty(
-        renderer->props,
-        SDL_PROP_GPU_DEVICE_VULKAN_INSTANCE_POINTER,
-        renderer->instance);
-    SDL_SetPointerProperty(
-        renderer->props,
-        SDL_PROP_GPU_DEVICE_VULKAN_PHYSICAL_DEVICE_POINTER,
-        renderer->physicalDevice);
-    SDL_SetPointerProperty(
-        renderer->props,
-        SDL_PROP_GPU_DEVICE_VULKAN_DEVICE_POINTER,
-        renderer->logicalDevice);
-    SDL_SetPointerProperty(
-        renderer->props,
-        SDL_PROP_GPU_DEVICE_VULKAN_QUEUE_POINTER,
-        renderer->unifiedQueue);
-    SDL_SetNumberProperty(
-        renderer->props,
-        SDL_PROP_GPU_DEVICE_VULKAN_QUEUE_FAMILY_INDEX_NUMBER,
-        renderer->queueFamilyIndex);
+    // Native-handle exposure is best-effort: do not fail device creation over it.
+    if (!SDL_SetPointerProperty(
+            renderer->props,
+            SDL_PROP_GPU_DEVICE_VULKAN_INSTANCE_POINTER,
+            renderer->instance) ||
+        !SDL_SetPointerProperty(
+            renderer->props,
+            SDL_PROP_GPU_DEVICE_VULKAN_PHYSICAL_DEVICE_POINTER,
+            renderer->physicalDevice) ||
+        !SDL_SetPointerProperty(
+            renderer->props,
+            SDL_PROP_GPU_DEVICE_VULKAN_DEVICE_POINTER,
+            renderer->logicalDevice) ||
+        !SDL_SetPointerProperty(
+            renderer->props,
+            SDL_PROP_GPU_DEVICE_VULKAN_QUEUE_POINTER,
+            renderer->unifiedQueue) ||
+        !SDL_SetNumberProperty(
+            renderer->props,
+            SDL_PROP_GPU_DEVICE_VULKAN_QUEUE_FAMILY_INDEX_NUMBER,
+            renderer->queueFamilyIndex)) {
+        SDL_LogWarn(SDL_LOG_CATEGORY_GPU, "Failed to expose Vulkan device handles on renderer properties.");
+    }
 
     // Record device name
     const char *deviceName = renderer->physicalDeviceProperties.properties.deviceName;

@@ -173,6 +173,9 @@ VULKAN_DEVICE_FUNCTION(vkDestroySwapchainKHR)
 VULKAN_DEVICE_FUNCTION(vkQueuePresentKHR)
 VULKAN_DEVICE_FUNCTION(vkGetSwapchainImagesKHR)
 
+// VK_EXT_device_fault (optional; resolves to NULL when the extension is unavailable)
+VULKAN_DEVICE_FUNCTION(vkGetDeviceFaultInfoEXT)
+
 /*
  * Redefine these every time you include this header!
  */

@@ -7507,17 +7507,16 @@ static bool D3D12_INTERNAL_AllocateCommandBuffer(
 
     commandBuffer->renderer = renderer;
     commandBuffer->inFlightFence = NULL;
+    // Native-handle exposure is best-effort: never fail command buffer
+    // acquisition over it. If this fails (only realistically on OOM),
+    // SDL_GetGPUCommandBufferProperties returns 0 or lacks the key.
     commandBuffer->common.props = SDL_CreateProperties();
-    if (commandBuffer->common.props == 0) {
-        D3D12_INTERNAL_DestroyCommandBuffer(commandBuffer);
-        SET_STRING_ERROR_AND_RETURN("Failed to create D3D12 command buffer properties.", false);
-    }
-    if (!SDL_SetPointerProperty(
+    if (commandBuffer->common.props == 0 ||
+        !SDL_SetPointerProperty(
             commandBuffer->common.props,
             SDL_PROP_GPU_COMMAND_BUFFER_D3D12_COMMAND_LIST_POINTER,
             commandBuffer->graphicsCommandList)) {
-        D3D12_INTERNAL_DestroyCommandBuffer(commandBuffer);
-        SET_STRING_ERROR_AND_RETURN("Failed to expose D3D12 command list pointer on command buffer properties.", false);
+        SDL_LogWarn(SDL_LOG_CATEGORY_GPU, "Failed to expose D3D12 command list pointer on command buffer properties.");
     }
 
     // Window handling
@@ -9475,10 +9474,10 @@ static SDL_GPUDevice *D3D12_CreateDevice(bool debugMode, bool preferLowPower, SD
         s_CommandQueue = renderer->commandQueue;
     }
 #endif
+    // Native-handle exposure is best-effort: do not fail device creation over it.
     if (!SDL_SetPointerProperty(renderer->props, SDL_PROP_GPU_DEVICE_D3D12_DEVICE_POINTER, renderer->device) ||
         !SDL_SetPointerProperty(renderer->props, SDL_PROP_GPU_DEVICE_D3D12_COMMAND_QUEUE_POINTER, renderer->commandQueue)) {
-        D3D12_INTERNAL_DestroyRenderer(renderer);
-        SET_STRING_ERROR_AND_RETURN("Failed to expose D3D12 device/command queue pointers on renderer properties.", NULL);
+        SDL_LogWarn(SDL_LOG_CATEGORY_GPU, "Failed to expose D3D12 device/command queue pointers on renderer properties.");
     }
 
     // Create indirect command signatures

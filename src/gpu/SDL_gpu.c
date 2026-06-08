@@ -1376,15 +1376,8 @@ SDL_GPUTexture *SDL_CreateGPUTexture(
         if (createinfo->num_levels <= 0) {
             FAIL_TEXTURE_CREATE("For any texture: num_levels must be >= 1");
         }
-        if (createinfo->type == SDL_GPU_TEXTURETYPE_2D && createinfo->layer_count_or_depth != 1)
-        {
-            SDL_assert_release(!"2D textures must have a layer count of 1");
-            failed = true;
-        }
-        if (createinfo->type == SDL_GPU_TEXTURETYPE_2D && createinfo->layer_count_or_depth != 1)
-        {
-            SDL_assert_release(!"2D textures must have a layer count of 1");
-            failed = true;
+        if (createinfo->type == SDL_GPU_TEXTURETYPE_2D && createinfo->layer_count_or_depth != 1) {
+            FAIL_TEXTURE_CREATE("2D textures must have a layer count of 1");
         }
         if ((createinfo->usage & SDL_GPU_TEXTUREUSAGE_GRAPHICS_STORAGE_READ) && (createinfo->usage & SDL_GPU_TEXTUREUSAGE_SAMPLER)) {
             FAIL_TEXTURE_CREATE("For any texture: usage cannot contain both GRAPHICS_STORAGE_READ and SAMPLER");
